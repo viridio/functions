@@ -1,0 +1,897 @@
+load(file = "~/SIG/Geo_util/Functions_09.RData")
+
+prj.str <- CRS("+proj=utm +zone=20 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+
+geo.str <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+
+hyb.param <- read.csv("~/SIG/Research_Partners/hyb_param.csv", stringsAsFactors = F)
+names(hyb.param) <- gsub("\\.", "", names(hyb.param))
+
+#Red-Yellow-Darkgreen
+cols <- colorRampPalette(c("red", "yellow", "darkgreen"), space = "Lab")
+
+# Elevation color ramp
+elev_cols <- colorRampPalette(c("#AFF0E9", "#FFFFB3", "#008040", "#FCBA03",
+                                "#800000", "#69300D", "#ABABAB", "#FFFCFF"),
+                              space = "Lab")
+
+# Electrical conductivity color ramp
+ec_cols <- colorRampPalette(c("#F2F1A2", "#FFFF00", "#FF0000", "#B007ED",
+                              "#071DAD"), space = "Lab")
+
+# Organic matter color ramp
+om_cols <- colorRampPalette(c("#D6D69C", "#734D00", "#000000"), space = "Lab")
+
+lndst_01 <- readOGR("~/SIG/Geo_util/raster/arg/", "lndst_scn_g")
+
+for (a in names(lndst_01@data)) {
+  lndst_01@data[, a] <- as.character(lndst_01@data[, a])
+}
+lndst_02 <- list()
+for (a in seq_along(lndst_01)) {
+  lndst_02[a] <- lndst_01[a,]
+}
+lndst.pol <- lndst_02
+rm(a, lndst_01, lndst_02)
+
+#Function to get Landsat scene Path and Row from spatial object
+scn_pr <- function(sp.layer) {
+  require(sp)
+  if (summary(sp.layer)$is.projected == T) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, geo.str)
+  }
+  require(rgeos)
+  pth_rw_lst <- character()
+  for (a in lndst.pol) {
+    if (gCovers(a, sp.layer)) {
+      pth_rw_lst <- c(pth_rw_lst, paste0(sub("P", "", a@data["PATH"]),
+                                         sub("R", "", a@data["ROW"])))
+    }
+  }
+  return(pth_rw_lst)
+}
+
+#Function to get and filter landsat images from selected paths
+mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
+                      st.year = 1990, vi.thr = 1500, cv.lim = 15) {
+  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+    stop("sp.layer isn't a SpatialPolygon* object")
+  }
+  require(sp)
+  require(rgdal)
+  require(rgeos)
+  require(raster)
+  curr.wd <- getwd()
+  setwd(paste0("~/SIG/Geo_util/raster/arg/" , vindx, "_Landsat/"))
+  img.lst <- list.files(".", ".tif$")
+  if (summary(sp.layer)$is.projected == F) {
+    sp.layer <- spTransform(sp.layer, prj.str)
+  }
+  sp.comm <- createSPComment(sp.layer)
+  sp.layer <- gBuffer(sp.comm, width = -buff)
+  sp.layer <- spTransform(sp.layer, geo.str)
+  scn.pr <- scn_pr(sp.layer)
+  r.stk <- stack()
+  r.stk2 <- stack()
+  df1 <- data.frame()
+  df2<- data.frame()
+  i <- 1
+  vi.lst <- grep(paste(scn.pr, collapse = "|"), img.lst, value = T)
+  r.base <- raster(vi.lst[i])
+  proj4string(r.base) <- geo.str
+  r.crp.bs <- crop(r.base, sp.layer, snap = "near")
+  while(any(is.na(r.crp.bs[]))) {
+    i <- i + 1
+    r.base <- raster(vi.lst[i])
+    proj4string(r.base) <- geo.str
+    r.crp.bs <- crop(r.base, sp.layer, snap = "near")
+  }
+  r.crp.bs <- mask(r.crp.bs, sp.layer)
+  for (c in vi.lst) {
+    scn.year <- as.numeric(substr(c, 10, 13))
+    if (scn.year >= st.year) {
+      r <- raster(c)
+      proj4string(r) <- geo.str
+      r.crp <- crop(r, sp.layer, snap = "near")
+      if (any(is.na(r.crp[])) == F) {
+        r.crp <- mask(r.crp, sp.layer)
+        vi.mdn <- summary(r.crp)[3]
+        r.cv <- (cellStats(r.crp, stat = "sd") /
+                   cellStats(r.crp, stat = "mean")) * 100
+        if (vi.mdn > vi.thr & r.cv < cv.lim){
+          if (compareRaster(r.crp, r.crp.bs, extent = T, rowcol = T,
+                            crs = F, res = F, orig = F, rotation = T,
+                            values = F, stopiffalse = F,
+                            showwarning = F) == F) {
+            r.crp <- resample(r.crp, r.crp.bs, method = "bilinear")
+          }
+          r.stk <- stack(r.stk, r.crp)
+          df1 <- rbind.data.frame(df1, data.frame(SCN = c,
+                                                  Year = scn.year,
+                                                  VI = vi.mdn,
+                                                  stringsAsFactors = F))
+        }
+      }
+    }
+  }
+  if (length(unique(df1$Year)) < length(df1$Year)) {
+    for (d in unique(df1$Year)) {
+      vi.max <- max(df1[df1$Year == d, "VI"])
+      df2 <- rbind.data.frame(df2, df1[df1$VI == vi.max,])
+    }
+    for (e in df2$SCN) {
+      r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
+    }
+  } else {
+    r.stk2 <- r.stk
+  }
+  r.stk2 <- projectRaster(r.stk2, crs = prj.str, method = "bilinear")
+  setwd(curr.wd)
+  return(r.stk2)
+}
+
+#Function to reclassify a raster in n classes by jenks
+rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
+  if (class(raster.lyr) != "RasterLayer"){
+    stop("Input object isn't a RasterLayer object")
+  }
+  if (n.class != length(val)) {
+    stop("Number of classes doesn't match number of values")
+  }
+  require(classInt)
+  require(raster)
+  nw.vls <- val
+  cut.vals <- classIntervals(raster.lyr[!is.na(raster.lyr)], n = n.class, style = style)$brks
+  mat <- as.matrix(data.frame(from = cut.vals[1:n.class],
+                              to = cut.vals[2:(n.class + 1)],
+                              beco = nw.vls))
+  raster.rcls <- reclassify(raster.lyr, mat, include.lowest = T)
+  return(raster.rcls)
+}
+
+#Rsaga DEM Covariates
+dem_cov <- function(DEM.layer) {
+  if (class(DEM.layer)[1] != "SpatialPointsDataFrame") {
+    stop("DEM.layer isn't a SpatialPointsDataFrame object")
+  }
+  require(sp)
+  require(RSAGA)
+  require(raster)
+  if ("./DEM_derivates" %in% list.dirs()) {
+    unlink("./DEM_derivates", recursive = T, force = T)
+  }
+  dir.create("DEM_derivates")
+  curr.wd <- getwd()
+  setwd("./DEM_derivates")
+  base.lyr <- DEM.layer
+  lyr.crs <- CRS(proj4string(base.lyr))
+  base.spix <- SpatialPixelsDataFrame(base.lyr,
+                                      data = base.lyr@data["DEM"],
+                                      proj4string = lyr.crs)
+  base.rstr <- raster(base.spix)
+  dem.file <- "dem.tif"
+  writeRaster(base.rstr, dem.file)
+  rsaga.import.gdal(dem.file, show.output.on.console = F)
+  rsaga.geoprocessor("ta_morphometry", module = 0,
+                     param = list(ELEVATION = "dem.sgrd",
+                                  SLOPE = "Slope",
+                                  ASPECT = "Aspect",
+                                  METHOD = 1),
+                     show.output.on.console = F)
+  rsaga.geoprocessor("ta_morphometry", module = 0,
+                     param = list(ELEVATION = "dem.sgrd",
+                                  CURV = "Curv",
+                                  HCURV = "PrCurv",
+                                  VCURV = "PlCurv",
+                                  METHOD = 5),
+                     show.output.on.console = F)
+  rsaga.geoprocessor("ta_hydrology", module = 18,
+                     param = list(DEM = "dem.sgrd",
+                                  AREA = "Catch_Area"),
+                     show.output.on.console = F)
+  rsaga.geoprocessor("ta_hydrology", module = 20,
+                     param = list(SLOPE = "Slope.sgrd",
+                                  AREA = "Catch_Area.sgrd",
+                                  TWI = "CTI"),
+                     show.output.on.console = F)
+  rsaga.geoprocessor("ta_morphometry", module = 1,
+                     param = list(ELEVATION = "dem.sgrd",
+                                  RESULT = "Conv_Index"),
+                     show.output.on.console = F)
+  rsaga.geoprocessor("ta_hydrology", module = 22,
+                     param = list(SLOPE = "Slope.sgrd",
+                                  AREA = "Catch_Area.sgrd",
+                                  LS = "LS_Factor",
+                                  METHOD = 2),
+                     show.output.on.console = F)
+  rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
+                      show.output.on.console = F)
+  sgrd.lst <- list.files(".", pattern = ".sgrd$")
+  sgrd.lst <- sgrd.lst[!(sgrd.lst %in% "dem.sgrd")]
+  for (a in sgrd.lst) {
+    tif.name <- paste0(sub(".sgrd", "", a), ".tif")
+    rsaga.geoprocessor("io_gdal", module = 2,
+                       param = list(GRIDS = a,
+                                    FILE = tif.name),
+                       show.output.on.console = F)
+    terr.tif <- raster(tif.name)
+    terr.data <- extract(terr.tif, base.lyr)
+    attr.name <- sub(".sgrd", "", a)
+    base.lyr@data[attr.name] <- terr.data
+  }
+  setwd(curr.wd)
+  return(base.lyr)
+}
+
+# Defining the MBA interpolation function
+int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, krig = F) {
+  if (substr(class(base.pnts), 1, 13)[1] != "SpatialPoints" |
+        substr(class(obs.pnts), 1, 13)[1] != "SpatialPoints") {
+    stop("at least one of the inputs isn't a SpatialPoints* object")
+  }
+  require(sp)
+  require(MBA)
+  base.map <- base.pnts
+  pred.grid <- base.map@coords
+  if (length(zerodist(obs.pnts)) == 0) {
+    obs.pnts <- remove.duplicates(obs.pnts)
+  }
+  obs.map <- obs.pnts
+  for (a in vrbl) {
+    obs.vrbl <- subset(obs.map, eval(parse(text = a)) > 0)
+    obs.vrbl <- obs.vrbl[!is.na(obs.vrbl@data[, a]),]
+    vrbl.data <- obs.vrbl@data[, a]
+    # cleaning by spatial association
+    if (moran) {
+      obs.vrbl <- moran_cln(obs.vrbl, a, dist = dist)
+      vrbl.data <- obs.vrbl@data[, a]
+    }
+    # cleaning by data distribution
+    if (clean) {
+      require(robustbase)
+      # Outlier detection
+      vrbl.out <- adjboxStats(vrbl.data)$out
+      # If there are outliers they will be removed
+      if (length(vrbl.out)>0) {
+        obs.vrbl <- obs.vrbl[!(vrbl.data %in% vrbl.out),]
+        vrbl.data <- obs.vrbl@data[, a]
+      }
+    }
+    if (krig) {
+      # variogram fitting
+      vg.fit <- try(var_fit(obs.vrbl, a, cln = F), silent = T)
+      if (class(vg.fit)[1] != "try-error") {
+        vrbl.krig <- krige((vrbl.data ^ vg.fit[[1]]) ~ 1, locations = obs.vrbl,
+                           newdata = base.map, model = vg.fit[[3]])
+        vrbl.krig@data[, 1] <- vrbl.krig@data[, 1] ^ (1 / vg.fit[[1]])
+        base.map@data[, a] <- vrbl.krig@data[, 1]
+        map.plot <- base.map[a]
+        map.plot@data[paste0(a, "_var")] <- vrbl.krig@data[, 2]
+        # save a plot of the variogram
+        pdf(paste0(a, ".pdf"), paper = "letter", width = 0, height = 0)
+        #layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+        print(plot(vg.fit[[2]], model = vg.fit[[3]], pch = 21, cex = 2, lty = 2, lwd = 2,
+                   col = "red", xlab = "Distance", ylab = "Semivariance",
+                   main = paste0("Emp. & fitted semivariogram for ", a)))
+        par(mfrow = c(2, 1))
+        plot(pnt2rstr(map.plot, c(a, paste0(a, "_var"))), y = 1, col = cols(255))
+        plot(pnt2rstr(map.plot, c(a, paste0(a, "_var"))), y = 2, col = rev(cols(255)))
+        dev.off()
+      } else {
+        obs.mat <- cbind(obs.vrbl@coords[, 1:2], vrbl.data)
+        obs.mba <- mba.points(obs.mat, pred.grid, verbose = F)
+        obs.mba <- data.frame(obs.mba$xyz.est)
+        obs.mba[obs.mba$z < 0, 3] <- 0
+        base.map@data[, a] <- obs.mba$z
+      }
+    } else {
+      obs.mat <- cbind(obs.vrbl@coords[, 1:2], vrbl.data)
+      obs.mba <- mba.points(obs.mat, pred.grid, verbose = F)
+      obs.mba <- data.frame(obs.mba$xyz.est)
+      obs.mba[obs.mba$z < 0, 3] <- 0
+      base.map@data[, a] <- obs.mba$z
+    }
+  }
+  return(base.map)
+}
+
+# plant population response by hybrid
+hyb_pp <- function(hybrid, exp.yld, step = 1235) {
+  num.param <- as.numeric(hyb.param[1:8, hybrid])
+  pl.pop <- vector()
+  min.kn.yld <- 7
+  if (hyb.param[9, hybrid] == "L") {
+    seed.rates <- seq(30000, 150000, step)
+    for (a in seq_along(exp.yld)) {
+      hyb.pp <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
+                    (num.param[5] * exp.yld[a] - num.param[5] * num.param[8]) -
+                    2 * num.param[6] * num.param[7] * (num.param[8] - exp.yld[a])) /
+                   (2 * num.param[3] + 2 * num.param[6] * (exp.yld[a] - num.param[8]))) * 10000
+      hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+      pl.pop[a] <- hyb.pp
+    }
+    return(pl.pop)
+  } else {
+    pp.min <- 35000
+    pp.kn <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
+                 (num.param[5] * min.kn.yld - num.param[5] * num.param[8]) -
+                 2 * num.param[6] * num.param[7] * (num.param[8] - min.kn.yld)) /
+                (2 * num.param[3] + 2 * num.param[6] * (min.kn.yld - num.param[8]))) * 10000
+    seed.rates <- seq(35000 + step, 150000, step)
+    pp.lm <- lm(y ~ x, data = data.frame(x = c(3, min.kn.yld), y = c(pp.min, pp.kn)))
+    for (a in seq_along(exp.yld)) {
+      if (exp.yld[a] < 3) {
+        hyb.pp <- pp.min
+      }
+      if (exp.yld[a] >= 3 & exp.yld[a] < min.kn.yld) {
+        hyb.pp <- predict(pp.lm, newdata = data.frame(x = exp.yld[a]))
+        hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+      }
+      if (exp.yld[a] >= min.kn.yld) {
+        hyb.pp <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
+                      (num.param[5] * exp.yld[a] - num.param[5] * num.param[8]) -
+                      2 * num.param[6] * num.param[7] * (num.param[8] - exp.yld[a])) /
+                     (2 * num.param[3] + 2 * num.param[6] * (exp.yld[a] - num.param[8]))) * 10000
+        hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+      }
+      pl.pop[a] <- hyb.pp
+    }
+    return(pl.pop)
+  }
+}
+
+presc_grid <- function(sp.layer, pred.model, hybrid, points = T, fill = F, quantile = 0.5, step = 1235) {
+  if (substr(class(sp.layer), 1, 13)[1] != "SpatialPoints") {
+    stop("sp.layer isn't a SpatialPoints* object")
+  }
+  require(sp)
+  if (fill) {
+    if (nrow(sp.layer@data) > nrow(na.omit(sp.layer@data))) {
+      require(DMwR)
+      sp.layer@data <- knnImputation(sp.layer@data)
+    }
+  }
+  if (points == F) {
+    require(raster)
+    lyr.crs <- CRS(proj4string(sp.layer))
+    sp.spix <- SpatialPixelsDataFrame(sp.layer,
+                                      data = data.frame(1:nrow(sp.layer@data)),
+                                      proj4string = lyr.crs)
+    sp.r <- raster(sp.spix)
+    sp.poly <- rasterToPolygons(sp.r, dissolve = F)
+  } else {
+    sp.poly <- sp.layer
+  }
+  if (class(pred.model)[1] == "randomForest") {
+    require(randomForest)
+    usd.var <- dimnames(pred.model$importance)[[1]]
+  }
+  if (class(pred.model)[1] == "quantregForest") {
+    require(quantregForest)
+    usd.var <- names(pred.model$forest$ncat)
+  }
+  if (class(pred.model) == "cubist") {
+    require(Cubist)
+    usd.var <- pred.model$vars$all
+  }
+  if (class(pred.model) == "gbm") {
+    require(gbm)
+    usd.var <- pred.model$var.names
+  }
+  sp.poly@data <- data.frame(Hybrid = rep(hybrid, nrow(sp.poly@data)))
+  sp.poly@data["Exp_Yld"] <- predict(pred.model, sp.layer@data[usd.var],
+                                     quantiles = quantile)
+  if (hyb.param[9, hybrid] == "L") {
+    sp.poly@data["Exp_Yld"] <- sp.poly@data["Exp_Yld"] / 2
+  }
+  sp.poly@data["PP"] <- hyb_pp(hybrid, sp.poly@data[, "Exp_Yld"], step)
+  return(sp.poly)
+}
+
+grd_m <- function(sp.layer, dist = 10) {
+  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+    stop("sp.layer isn't a SpatialPolygons* object")
+  }
+  if (summary(sp.layer)$is.projected == F) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.str)
+  }
+  require(sp)
+  lyr.bb <- sp.layer@bbox
+  grd.1 <- expand.grid(x = seq(lyr.bb[1, 1], lyr.bb[1, 2], by = dist),
+                       y = seq(lyr.bb[2, 1], lyr.bb[2, 2], by = dist))
+  grd.crs <- CRS(proj4string(sp.layer))
+  grd.1 <- SpatialPointsDataFrame(grd.1, data = grd.1, proj4string = grd.crs)
+  grd.inp <- !is.na(over(grd.1, SpatialPolygons(sp.layer@polygons,
+                                                proj4string = grd.crs)))
+  grd.1 <- grd.1[grd.inp,]
+  return(grd.1)
+}
+
+mz_smth <- function(sp.layer, area = 2500) {
+  if (substr(class(sp.layer), 1, 15)[1] == "SpatialPolygons" |
+        class(sp.layer)[1] == "RasterLayer") {
+    require(rgrass7)
+    require(raster)
+    if (class(sp.layer) == "RasterLayer") {
+      sp.layer <- rasterToPolygons(sp.layer, dissolve = T, na.rm = T)
+    }
+    if (summary(sp.layer)$is.projected == F) {
+      library(rgdal)
+      sp.layer <- spTransform(sp.layer, prj.str)
+    }
+    if (nchar(Sys.getenv("GISRC")) == 0) {
+      initGRASS(gisBase = "c:/Program Files (x86)/GRASS GIS 7.0.0",
+                override = TRUE)
+    }
+    sp.layer <- disaggregate(sp.layer)
+    inp.nm <- paste0(sample(c(letters, 0:9), 1), sample(c(letters, 0:9), 1),
+                     sample(c(letters, 0:9), 1), sample(c(letters, 0:9), 1))
+    zm.pol <- paste0("zm_pol_", inp.nm)
+    names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
+    writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
+    zm.gnrl <- paste0("zm_gnrl_", inp.nm)
+    execGRASS("v.generalize", flags = c("overwrite"), input = zm.pol,
+              output = zm.gnrl, method = "snakes", threshold = 1)
+    zm.cln <- paste0("zm_cln_", inp.nm)
+    execGRASS("v.clean", flags = c("overwrite"), input = zm.gnrl,
+              output = zm.cln, tool = "rmarea", threshold = area)
+    zm.fnl <- readVECT(zm.cln)
+    return(zm.fnl)
+  } else {
+    stop("sp.layer isn't a SpatialPolygons* or RasterLayer object")
+  }
+}
+
+pnt2rstr <- function(sp.layer, field = names(sp.layer)){
+  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+    stop("sp.layer isn't a SpatialPointsDataFrame")
+  }
+  require(sp)
+  require(raster)
+  lyr.crs <- CRS(proj4string(sp.layer))
+  if (length(field) > 1) {
+    sp.rstr <- stack()
+    for (a in field) {
+      if (a %in% names(sp.layer@data) == F) {
+        stop("field isn't an attribute in SpatialPointsDataFrame")
+      }
+      sp.spix <- SpatialPixelsDataFrame(sp.layer,
+                                        data = sp.layer@data[a],
+                                        proj4string = lyr.crs)
+      sp.rstr <- stack(sp.rstr, raster(sp.spix))
+    }
+  } else {
+    if (field %in% names(sp.layer@data) == F) {
+      stop("field isn't an attribute in SpatialPointsDataFrame")
+    }
+    sp.spix <- SpatialPixelsDataFrame(sp.layer,
+                                      data = sp.layer@data[field],
+                                      proj4string = lyr.crs)
+    sp.rstr <- raster(sp.spix)
+  }
+  return(sp.rstr)
+}
+
+geo_centroid <- function(sp.layer){
+  if (substr(class(sp.layer), 1, 7)[1] != "Spatial") {
+    stop("sp.layer isn't a Spatial* object")
+  }
+  if (summary(sp.layer)$is.projected == T) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, geo.str)
+  }
+  require(rgeos)
+  coord <- gCentroid(sp.layer)@coords
+  names(coord) <- c("Lon", "Lat")
+  coord <- coord[c(2, 1)]
+  return(coord)
+}
+
+moran_cln <- function(sp.layer, vrbl, dist = 20) {
+  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+    stop("sp.layer isn't a SpatialPointsDataFrame object")
+  }
+  require(spdep)
+  nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
+  nb.crd <- card(nb.lst)
+  spl.noznb <- subset(sp.layer, nb.crd > 0)
+  nb.noznb <- subset(nb.lst, nb.crd > 0)
+  w.mat <- nb2listw(nb.noznb, style = "W")
+  vrbl.dt <- spl.noznb@data[, vrbl]
+  mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
+  mp.out <- which(rowSums(matrix(as.numeric(mp$is.inf), ncol = 6)) != 0)
+  lm <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
+                   alternative = "less")
+  lm <- data.frame(lm)
+  lm.out <- which(lm[, "Ii"] <= 0 | lm[, "Pr.z...0."] <= 0.05)
+  all.out <- unique(c(mp.out, lm.out))
+  spl.noznb <- spl.noznb[-all.out, ]
+  return(spl.noznb)
+}
+
+var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
+  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+    stop("sp.layer isn't a SpatialPointsDataFrame object")
+  }
+  require(automap)
+  require(MASS)
+  require(gstat)
+  vrbl.nm <- vrbl
+  vrbl.spdt <- subset(sp.layer, eval(parse(text = vrbl.nm)) > 0)
+  vrbl.spdt <- vrbl.spdt[!is.na(vrbl.spdt@data[, vrbl.nm]),]
+  if (ncol(vrbl.spdt@coords) > 2) {
+    vrbl.spdt@coords <- vrbl.spdt@coords[, 1:2]
+  }
+  if (length(zerodist(vrbl.spdt)) == 0) {
+    vrbl.spdt <- remove.duplicates(vrbl.spdt)
+  }
+  vrbl.dt <- vrbl.spdt@data[, vrbl.nm]
+  # cleaning
+  if (cln) {
+    require(robustbase)
+    vrbl.out <- adjboxStats(vrbl.dt)$out
+    if (length(vrbl.out)>0) {
+      vrbl.spdt <- vrbl.spdt[!(vrbl.dt %in% vrbl.out),]
+      vrbl.dt <- vrbl.spdt@data[, vrbl.nm]
+    }
+  }
+  ifelse(length(vrbl.spdt) > 5000, n.samp <- 5000, n.samp <- length(vrbl.spdt))
+  assign(".vrbl.dt", vrbl.dt, envir = .GlobalEnv)
+  vrbl.bc <- boxcox(lm(.vrbl.dt ~ 1), lambda = seq(-5, 5, 0.01), plotit = F)
+  remove(".vrbl.dt", envir = .GlobalEnv)
+  ifelse(shapiro.test(sample(vrbl.dt, n.samp))$p.value < 0.05,
+         lmbd <- vrbl.bc[["x"]][which.max(vrbl.bc[["y"]])],
+         lmbd <- 1)
+  max.dist <- max(spDistsN1(vrbl.spdt, vrbl.spdt[1,]))
+  #use.dist <- max.dist / 3
+  #variogram models
+  vg.mods <- data.frame(short = c("Exp", "Sph", "Gau", "Mat", "Cir", "Wav"),
+                        long = c("exponential", "spherical", "gaussian", "matern",
+                                 "circular", "wave"),
+                        stringsAsFactors = F)
+  #autofit
+  auto.vgm <- tryCatch(autofitVariogram((vrbl.dt ^ lmbd) ~ 1,
+                                        vrbl.spdt,model = vg.mods[, 1],
+                                        kappa = seq(0.01, 3, by = 0.01),
+                                        cressie = T),
+                       error = function(e) return("error"),
+                       warning = function(w) return("warning"))
+  if (class(auto.vgm)[1] == "character") {
+    stop("a variogram could not be fitted")
+  }
+  if (auto.vgm$var_model[2, 3] > max.dist) {
+    stop("a variogram could not be fitted")
+  }
+  if (auto.vgm$var_model[1, 2] > auto.vgm$var_model[2, 2]) {
+    stop("a variogram could not be fitted")
+  }
+  if ((max(auto.vgm$var_model[, 2]) - min(auto.vgm$var_model[, 2])) < 0.0001) {
+    stop("a variogram could not be fitted")
+  }
+  sh.mod <- as.character(auto.vgm$var_model$model[2])
+  lg.mod <- vg.mods[vg.mods[1] == sh.mod, 2]
+  # variogram creation
+  vrbl.vgm <- variogram((vrbl.dt ^ lmbd) ~ 1, locations = vrbl.spdt, cressie = T)
+  inug <- auto.vgm$var_model[1, 2]
+  isill <- auto.vgm$var_model[2, 2]
+  irange <- auto.vgm$var_model[2, 3]
+  #fit with selected parameters
+  fit.res <- tryCatch(fit.variogram(vrbl.vgm, vgm(isill, sh.mod, irange, inug),
+                                    fit.sills = T, fit.ranges = T,
+                                    warn.if.neg = T),
+                      error = function(e) return("error"),
+                      warning = function(w) return("warning"))
+  if (class(fit.res)[1] == "character" | attr(fit.res, "singular") |
+        fit.res$psill[1] >= fit.res$psill[2]) {
+    stop("a variogram could not be fitted")
+  } else {
+    vrbl.fit <- fit.res
+  }
+  if (plot) {
+    print(
+      plot(vrbl.vgm, model = vrbl.fit, pch = 21, cex = 2, lty = 2, lwd = 2,
+           col = "red", xlab = "Distance", ylab = "Semivariance",
+           main = paste0("Emp. & fitted semivariogram for ", vrbl.nm))
+    )
+  }
+  return(list(lmbd, vrbl.vgm, vrbl.fit))
+}
+
+kmz_sv <- function(sp.layer, kmz.name){
+  require(plotKML)
+  raster_layer <- pnt2rstr(sp.layer, c('DEM', 'Pred_OM', 'EC30', 'EC90'))
+  kml_open(file.name = paste0(kmz.name, '.kml'),
+           folder.name = kmz.name, 
+           overwrite = T)
+  kml_layer(raster_layer, 
+            raster.name = 'DEM',
+            subfolder.name='DEM (m)',
+            colour = 'DEM',
+            colour_scale = elev_cols(255))
+  kml_layer(raster_layer, 
+            raster.name = 'MO',
+            subfolder.name='MO (%)',
+            colour = 'Pred_OM',
+            colour_scale = om_cols(255))
+  kml_layer(raster_layer, 
+            raster.name = 'EC30',
+            subfolder.name='ECa 0-30 cm',
+            colour = 'EC30',
+            colour_scale = ec_cols(255))
+  kml_layer(raster_layer, 
+            raster.name = 'EC90',
+            subfolder.name='ECa 0-90 cm',
+            colour = 'EC90',
+            colour_scale = ec_cols(255))
+  
+  kml_close(file.name = paste0(kmz.name, '.kml'))
+  
+  file = paste(kmz.name, '.zip', sep = '')
+  zip(file, list.files(".", pattern = "png|kml"))
+  file.rename(paste0(kmz.name, ".zip"), paste0(kmz.name, ".kmz"))
+  file.remove(list.files(pattern = '.png|kml'))
+}
+
+# Import Veris data
+veris_import <- function(){
+  dat.fls <- list.files(path = "./Veris/", pattern = "VSECOM_.*\\.txt")
+  for (b in dat.fls) {
+    veris.n <- read.table(paste0("Veris/", b), 
+                          header = TRUE, 
+                          sep = "\t", 
+                          skipNul = T)
+    if (exists("veris")) {
+      veris <- rbind(veris, veris.n)
+    } else {
+      veris <- veris.n
+    }
+  }
+  ec30.nm <- grep("EC_SH|EC.SH|EC30", names(veris), ignore.case = T, value = T)
+  ec90.nm <- grep("EC_DP|EC.DP|EC90", names(veris), ignore.case = T, value = T)
+  names(veris) <- sub(ec30.nm, "EC30", names(veris))
+  names(veris) <- sub(ec90.nm, "EC90", names(veris))
+  require(sp)
+  require(rgdal)
+  veris.pnt <- SpatialPointsDataFrame(coords = veris[,c('Long','Lat')],
+                                      proj4string = geo.str, 
+                                      data = veris[,c('EC30', 'EC90', 'Red', 'IR')])
+  veris.pnt <- spTransform(veris.pnt, prj.str)
+  veris.pnt <- remove.duplicates(veris.pnt)
+  
+  rtk.poly <- readOGR("./rtk", sub(".shp", "", 
+                                   list.files("./rtk", pattern = ".shp$")))
+  if (summary(rtk.poly)$is.projected == F) {
+    rtk.poly <- spTransform(rtk.poly, prj.str)
+  }
+  join <- over(veris.pnt, rtk.poly['elevM'])
+  
+  veris.pnt@data['elevM'] <- join[1]
+  
+  writeOGR(veris.pnt, dsn = "./Veris", layer = "veris", 
+           driver = "ESRI Shapefile", overwrite_layer = T, )
+  return(veris.pnt)
+}
+
+
+om_cal <- function(veris, var = 'OM'){
+  require(rgdal)
+  require(rgeos)
+  require(ggplot2)
+  require(reshape2)
+  require(gridExtra)
+  
+  soil <- readOGR("./Soil", "soil_select_veris")
+  # soil <- readOGR("./Soil", "soil")
+  if (summary(soil)$is.projected == F) {
+    soil <- spTransform(soil, prj.str)
+  }
+  soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
+  join <- over(soil.buf, veris, fn = mean)
+  cal.db <- cbind(join, soil@data)
+  
+  lm1 <- as.formula(paste(var, '~', paste(c('Red', 'IR'), collapse = ' + ')))
+  lm2 <- as.formula(paste(var, '~', paste(c('Red', 'EC30'), collapse = ' + ')))
+  lm3 <- as.formula(paste(var, '~', paste(c('Red', 'EC90'), collapse = ' + ')))
+  lm4 <- as.formula(paste(var, '~', paste(c('Red', 'DEM'), collapse = ' + ')))
+  lm5 <- as.formula(paste(var, '~', paste(c('IR', 'EC30'), collapse = ' + ')))
+  lm6 <- as.formula(paste(var, '~', paste(c('IR', 'EC90'), collapse = ' + ')))
+  lm7 <- as.formula(paste(var, '~', paste(c('IR', 'DEM'), collapse = ' + ')))
+  lm8 <- as.formula(paste(var, '~', paste(c('EC30', 'EC90'), collapse = ' + ')))
+  lm9 <- as.formula(paste(var, '~', paste(c('EC30', 'DEM'), collapse = ' + ')))
+  lm10 <- as.formula(paste(var, '~', paste(c('EC90', 'DEM'), collapse = ' + ')))
+  lms <- paste0("lm", 1:10)
+  LMs <- vector("list", 10)
+  lm.summ <- data.frame('model' = numeric(10), 'min'= numeric(10), 'max' = numeric(10), 
+                        'median' = numeric(10), 'mean' = numeric(10), 'r2' = numeric(10),
+                        'rmse' = numeric(10))
+  
+  for(i in 1:length(lms)){
+    assign("LM", get(lms[i]), envir = .GlobalEnv)
+    model <- lm(LM, data = cal.db)
+    LMs[[i]] <- model
+    vrbl.lm <- as.character(attr(terms(model), "term.labels"))
+    
+    if (!summary(model)$adj.r.squared == "NaN"){
+      predicted <- predict(model)
+      actual <- cal.db[var]
+      data.lm <- cbind(predicted, actual)
+      names(data.lm) <- sub(var, "actual", names(data.lm))
+      
+      # Prediction and interpolation on veris.shp
+      pred.int <- predict(model, newdata = veris@data[vrbl.lm])
+      lm.summ[i, 'model'] <- i
+      lm.summ[i, 'min'] <- min(pred.int)
+      lm.summ[i, 'max'] <- max(pred.int)
+      lm.summ[i, 'median'] <- median(pred.int)
+      lm.summ[i, 'mean'] <- mean(pred.int)
+      lm.summ[i, 'r2'] <- summary(model)$adj.r.squared
+      lm.summ[i, 'rmse'] <- summary(model)$sigma
+    }
+  }
+  
+  write.csv(lm.summ, paste0('Veris/', var, '_lms_summary.csv'))
+  lm.summ <- subset(lm.summ, lm.summ$min > 0.5)
+  lm.summ <- subset(lm.summ, lm.summ$r2 > 0)
+  
+  # PDF write
+  pdf(paste0('Veris/', var, "_calibration.pdf"), 
+      paper = "letter", width = 6, height = 0)
+  
+  for(i in 1:nrow(lm.summ)){
+    model <- LMs[[i]]
+    vrbl.lm <- as.character(attr(terms(model), "term.labels"))
+    label <- paste('Model N°', lm.summ$model[i], ": ", var, 
+                   " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
+    pred.int <- predict(model, newdata = veris@data[vrbl.lm])
+    veris@data[paste0('Pred_', var)] <- pred.int
+    plot1 <- ggplot() +
+      geom_raster(data = veris@data, aes(x, y, fill = Pred_OM)) +
+      coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = paste0('Pred_', var), title = label) +
+      scale_fill_gradientn(colours = cols(255)) + theme_bw() + 
+      geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
+      theme(plot.title = element_text(size = 14, face = 'bold'),
+            axis.text = element_text(size = 10),
+            axis.title.x = element_text(size = 12, face = 'bold'),
+            axis.title.y = element_text(size = 12, face = 'bold'))
+    
+    join <- over(soil.buf, veris, fn = mean)
+    cal <- cbind(join, soil@data)
+    var.nm <- match("OM", names(cal))
+    names(cal)[var.nm] <- paste0('Lab_', var)
+    cal.fit <- lm(Lab_OM ~ Pred_OM, data = cal)
+    eqn <- paste("r2:", format(summary(cal.fit)$adj.r.squared, digits=2), "/", "RMSE:", 
+                 format(summary(cal.fit)$sigma, digits=2))
+    plot2 <- ggplot(data = cal, aes(Lab_OM, Pred_OM)) +
+      geom_point(size = 2) +
+      theme_bw() +
+      stat_smooth(method = lm, se = F, size = 0.5) +
+      geom_abline(intercept = 0, slope = 1, size = 0.5) +
+      labs(x = paste0(var, " Laboratorio"), y = paste0(var, " Predicho")) +
+      theme(axis.text = element_text(size = 10),
+            axis.title.x = element_text(size = 12, face = 'bold'),
+            axis.title.y = element_text(size = 12, face = 'bold')) +
+      annotate("text", label = eqn, parse = TRUE, x = Inf, y = -Inf,
+               hjust = 1.1, vjust = -.5)
+    
+    title <- paste0('Min:', format(min(veris$Pred_OM), digits = 2),
+                    ' / Median:', format(median(veris$Pred_OM), digits = 2),
+                    ' / Max:', format(max(veris$Pred_OM), digits = 2))
+    plot3 <- ggplot(veris@data, aes(x = Pred_OM, y = ..density..)) + 
+      geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
+      geom_density() +
+      labs(x = paste(var, "Predicho"), title = title) +
+      theme(axis.text = element_text(size = 10),
+            axis.title.x = element_text(size = 12, face = 'bold'),
+            axis.title.y = element_text(size = 12, face = 'bold')) +
+      theme_bw()
+    
+    grid.arrange(plot1, plot2, plot3, nrow=3)
+  }
+  dev.off()
+  
+  return(LMs)  
+}
+
+trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) {
+  require(rgdal)
+  require(rgeos)
+  require(maptools)
+  # Check if sp.layer is a spatialpolygon
+  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+    stop("sp.layer isn't a SpatialPolygons* object")
+  }
+  # Assignment of field boundary
+  bound <- sp.layer
+  # Extraction of bounding box
+  bbox <- bound@bbox
+  #Determination of cell size
+  cell.size <- c("largo" = ancho, "ancho" = largo)
+  lon.rng <- bbox[1,2] - bbox[1,1]
+  lat.rng <- bbox[2,2] - bbox[2,1]
+  # Number of rows and columns plu 50 to make it bigger
+  nc <- round(lon.rng / cell.size[1], 0) + 50
+  nr <- round(lat.rng / cell.size[2], 0) + 50
+  # Assignment of number of treatments
+  ntrat <- num.trat
+  # Creation of the vector of treatments
+  trt.ordr <- vector()
+  for (b in 1:ceiling(nc / ntrat)) {
+    rndm <- sample(ntrat, ntrat)
+    trt.ordr <- c(trt.ordr, rndm)
+  }
+  pas.ordr <- vector()
+  for (f in trt.ordr) {
+    pas.ordr <- c(pas.ordr, rep(f, n.pas))
+  }
+  # Creation of an empty data.frame of the number of rows and columns
+  mat <- data.frame(matrix(0, nrow = nr, ncol = nc))
+  # Creatior of the treatment matrix
+  mat.trt <- mat
+  for (i in 1:ncol(mat)) {
+    mat.trt[, i] <- pas.ordr[i]
+  }
+  mat.trt <- t(mat.trt)
+  trt.v <- as.vector(mat.trt)
+  # Creation of the vector of replications
+  rep.ordr <- vector()
+  for (f in 1:ceiling(nc / ntrat)) {
+    rep.ordr <- c(rep.ordr, rep(f, ntrat * n.pas))
+  }
+  # Creation of the replications matrix
+  mat.rep <- mat
+  for (i in 1:ncol(mat)) {
+    mat.rep[, i] <- rep.ordr[i]
+  }
+  mat.rep <- t(mat.rep)
+  rep.v <- as.vector(mat.rep)
+  # Lat-Lon point of the lower left corner
+  min.bbox <- bbox[, "min"]
+  # Offset of the corner
+  cell.offset <- c(min.bbox[1] - lon.rng / 4,
+                   min.bbox[2] - lat.rng / 4)
+  # Creation of a rectangular grid of defined dimensions
+  grd <- GridTopology(cell.offset, cell.size, c(nc, nr))
+  # Conversion to spatial polygons
+  pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.str)
+  # Extraction of the IDs of all the polygons
+  pol.lst <- list()
+  for (a in seq_along(pol.1)) {
+    pol.lst[a] <- slot(pol.1[a,]@polygons[[1]], "ID") 
+  }
+  # Creation of the data frame of the polygons
+  data <- data.frame(Trat = trt.v, Rep = rep.v)
+  row.names(data) <- unlist(pol.lst)
+  # Adding the data frame to the polygons
+  pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
+  proj4string(pol.2) <- prj.str
+  if (ang > 0) {
+    # Rotation of the polygons by the defined angle
+    pol.3 <- elide(pol.2, rotate = ang,
+                   center = gCentroid(bound)@coords)
+    proj4string(pol.3) <- prj.str
+  } else {
+    pol.3 <- pol.2
+  }
+  # Clipping of the polygon with the boundary
+  pol.4 <- gIntersection(bound, pol.3, byid = T)
+  # Creation of spatialpoints to join the attribute table with the clipped polygon
+  pol.3.pnt <- SpatialPointsDataFrame(coordinates(pol.3),
+                                      pol.3@data,
+                                      proj4string = prj.str)
+  pol.3.pnt <- gBuffer(pol.3.pnt,
+                       width = (min(cell.size) - 0.1) / 2,
+                       byid = T)
+  # Extraction of the data frame rows that match with the clipped polygons
+  df <- over(pol.4, pol.3.pnt)
+  # Final spatialpolygondf with attribute table
+  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = pol.3@data[df,], match.ID = F)
+  gc()
+  return(pol.5)
+}
+
+save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
+     cols, elev_cols, ec_cols, om_cols, presc_grid, hyb.param, hyb_pp, grd_m,
+     mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
+     om_cal, trat_grd, file = "~/SIG/Geo_util/Functions_09.RData")
