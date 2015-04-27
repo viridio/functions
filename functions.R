@@ -69,6 +69,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
     sp.layer <- spTransform(sp.layer, prj.str)
   }
   sp.comm <- createSPComment(sp.layer)
+  # Create buffer of polygon for border effect
   sp.layer <- gBuffer(sp.comm, width = -buff)
   sp.layer <- spTransform(sp.layer, geo.str)
   scn.pr <- scn_pr(sp.layer)
