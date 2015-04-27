@@ -688,6 +688,7 @@ om_cal <- function(veris, var = 'OM'){
   if (summary(soil)$is.projected == F) {
     soil <- spTransform(soil, prj.str)
   }
+  # Create buffer of 10 m
   soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
   join <- over(soil.buf, veris, fn = mean)
   cal.db <- cbind(join, soil@data)
