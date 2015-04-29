@@ -433,12 +433,16 @@ mz_smth <- function(sp.layer, area = 2500) {
     names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
     writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
     zm.gnrl <- paste0("zm_gnrl_", inp.nm)
-    execGRASS("v.generalize", flags = c("overwrite"), input = zm.pol,
+    execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
               output = zm.gnrl, method = "snakes", threshold = 1)
     zm.cln <- paste0("zm_cln_", inp.nm)
-    execGRASS("v.clean", flags = c("overwrite"), input = zm.gnrl,
+    execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.gnrl,
               output = zm.cln, tool = "rmarea", threshold = area)
     zm.fnl <- readVECT(zm.cln)
+    if (is.na(zm.fnl@proj4string)) {
+      proj4string(zm.fnl) <- prj.str
+    }
+    zm.fnl@data["cat"] <- NULL
     return(zm.fnl)
   } else {
     stop("sp.layer isn't a SpatialPolygons* or RasterLayer object")
