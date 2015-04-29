@@ -919,7 +919,6 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   }
   library(ade4)
   library(spdep)
-  library(e1071)
   if (any(is.na(sp.layer@data[vrbls]))) {
     library(DMwR)
     sp.layer@data <- knnImputation(sp.layer@data[vrbls])
