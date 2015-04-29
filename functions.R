@@ -37,18 +37,21 @@ rm(a, lndst_01, lndst_02)
 #Function to get Landsat scene Path and Row from spatial object
 scn_pr <- function(sp.layer) {
   require(sp)
-  if (summary(sp.layer)$is.projected == T) {
+  # Check projection and change to WGS84
+  if (is.projected(sp.layer)) {
     library(rgdal)
     sp.layer <- spTransform(sp.layer, geo.str)
   }
   require(rgeos)
   pth_rw_lst <- character()
+  # For each polygon of landsat scenes check which of them covers the layer
   for (a in lndst.pol) {
     if (gCovers(a, sp.layer)) {
       pth_rw_lst <- c(pth_rw_lst, paste0(sub("P", "", a@data["PATH"]),
                                          sub("R", "", a@data["ROW"])))
     }
   }
+  #Return vector of landsat path and rows
   return(pth_rw_lst)
 }
 
@@ -62,22 +65,31 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   require(rgdal)
   require(rgeos)
   require(raster)
+  # Save current directory to return later
   curr.wd <- getwd()
+  # Set current directory to the one that has the VI images
   setwd(paste0("~/SIG/Geo_util/raster/arg/" , vindx, "_Landsat/"))
+  # Create a list of available images 
   img.lst <- list.files(".", ".tif$")
-  if (summary(sp.layer)$is.projected == F) {
+  # Check projection of layer and project to measure distances
+  if (is.projected(sp.layer) == F) {
     sp.layer <- spTransform(sp.layer, prj.str)
   }
+  # Assign ownership of holes to parent polygons
   sp.comm <- createSPComment(sp.layer)
   # Create buffer of polygon for border effect
   sp.layer <- gBuffer(sp.comm, width = -buff)
+  # Reproject buffered layer to WGS84
   sp.layer <- spTransform(sp.layer, geo.str)
+  # Get on which landsat path rows the layer intersects
   scn.pr <- scn_pr(sp.layer)
+  # Create empty stacks and data.frames to store information
   r.stk <- stack()
   r.stk2 <- stack()
   df1 <- data.frame()
   df2<- data.frame()
   i <- 1
+  # Go through the images until finding the one that fully covers the layer
   vi.lst <- grep(paste(scn.pr, collapse = "|"), img.lst, value = T)
   r.base <- raster(vi.lst[i])
   proj4string(r.base) <- geo.str
@@ -88,6 +100,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
     proj4string(r.base) <- geo.str
     r.crp.bs <- crop(r.base, sp.layer, snap = "near")
   }
+  # Mask the selected image to use as base for the next ones
   r.crp.bs <- mask(r.crp.bs, sp.layer)
   for (c in vi.lst) {
     scn.year <- as.numeric(substr(c, 10, 13))
