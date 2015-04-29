@@ -1,4 +1,4 @@
-load(file = "~/SIG/Geo_util/Functions_09.RData")
+load(file = "~/SIG/Geo_util/Functions.RData")
 
 prj.str <- CRS("+proj=utm +zone=20 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
 
@@ -910,7 +910,60 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   return(pol.5)
 }
 
+multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
+                                         "SWI", "EC30", "EC90", "OM",
+                                         "CEC", "EVI_mean"),
+                     n.mz = 3, dist = 20, plot = F) {
+  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+    stop("sp.layer isn't a SpatialPointsDataFrame object")
+  }
+  library(ade4)
+  library(spdep)
+  library(e1071)
+  if (any(is.na(sp.layer@data[vrbls]))) {
+    library(DMwR)
+    sp.layer@data <- knnImputation(sp.layer@data[vrbls])
+  } else {
+    sp.layer@data <- sp.layer@data[vrbls]
+  }
+  # Creation of the data.frame for PCA
+  df <- sp.layer@data
+  # Calculation of nearest neighbors based on selected distance
+  n.neigh <- dnearneigh(sp.layer, 0, dist)
+  # Creation of the spatial weighted neighbor list
+  sp.w <- nb2listw(n.neigh, style = "W")
+  # Calculation of the PCA on the selected variables
+  data.pca <- dudi.pca(df, center = T, scannf = F, nf = 5)
+  # Run of multispati function
+  sp.mltspt <- multispati(data.pca, sp.w, scannf = F, nfposi = 5)
+  # Creation of a SPDF with the created Spatial components
+  sp.pca <- SpatialPointsDataFrame(sp.layer,
+                                   data.frame(sp.mltspt$li),
+                                   proj4string = proj4string(sp.layer))
+  if (plot) {
+    par(mfrow = c(1, 2))
+    s.corcircle(data.pca$co)
+    barplot(data.pca$eig * 10, names.arg = 1:length(data.pca$eig), 
+            main = "Variances",
+            xlab = "Principal Components",
+            ylab = "Percentage of variances",
+            col = "grey30", border = NA)
+    par(mfrow = c(1, 1))
+  }
+  cs1 <- data.frame("Variable" = row.names(data.pca$c1), "CS1" = data.pca$c1)
+  row.names(cs1) <- NULL
+  names(cs1)[2:6] <- paste0("CS", 1:5)
+  cs1 <- cs1[order(-abs(cs1[, 2])),]
+  row.names(cs1) <- NULL
+  # Clusterization of the first component in the selected number of clusters
+  pca.rast <- rstr_rcls(pnt2rstr(sp.pca, "CS1"), n.class = n.mz, val = 1:n.mz)
+  # Smoothing and cleaning of the managemnent zones
+  sp.pol <- mz_smth(pca.rast)
+  print(cs1)
+  return(sp.pol)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
-     om_cal, trat_grd, file = "~/SIG/Geo_util/Functions_09.RData")
+     om_cal, trat_grd, multi_mz, file = "~/SIG/Geo_util/Functions.RData")
