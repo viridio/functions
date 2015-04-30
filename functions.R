@@ -440,15 +440,13 @@ mz_smth <- function(sp.layer, area = 2500) {
                 override = TRUE)
     }
     sp.layer <- disaggregate(sp.layer)
-    inp.nm <- paste0(sample(c(letters, 0:9), 1), sample(c(letters, 0:9), 1),
-                     sample(c(letters, 0:9), 1), sample(c(letters, 0:9), 1))
-    zm.pol <- paste0("zm_pol_", inp.nm)
+    zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
     names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
     writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
-    zm.gnrl <- paste0("zm_gnrl_", inp.nm)
+    zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
     execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
               output = zm.gnrl, method = "snakes", threshold = 1)
-    zm.cln <- paste0("zm_cln_", inp.nm)
+    zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
     execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.gnrl,
               output = zm.cln, tool = "rmarea", threshold = area)
     zm.fnl <- readVECT(zm.cln)
