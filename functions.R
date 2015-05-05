@@ -102,25 +102,36 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   }
   # Mask the selected image to use as base for the next ones
   r.crp.bs <- mask(r.crp.bs, sp.layer)
+  # For each image in the list of intersecting ones, do...
   for (c in vi.lst) {
+    # Get the year of current image
     scn.year <- as.numeric(substr(c, 10, 13))
+    # Check if passes the year limit
     if (scn.year >= st.year) {
       r <- raster(c)
       proj4string(r) <- geo.str
+      # Crop raster with polygon
       r.crp <- crop(r, sp.layer, snap = "near")
+      # Check if the are any NAs in the cropped raster, go on if there aren't
       if (any(is.na(r.crp[])) == F) {
+        # Make mask of the crop
         r.crp <- mask(r.crp, sp.layer)
-        vi.mdn <- summary(r.crp)[3]
-        r.cv <- (cellStats(r.crp, stat = "sd") /
-                   cellStats(r.crp, stat = "mean")) * 100
+        # Calculate median and cv
+        vi.mdn <- cellStats(r.crp, median)
+        r.cv <- (cellStats(r.crp, sd) /
+                   cellStats(r.crp, mean)) * 100
+        # Check if stat meet requirements
         if (vi.mdn > vi.thr & r.cv < cv.lim){
           if (compareRaster(r.crp, r.crp.bs, extent = T, rowcol = T,
                             crs = F, res = F, orig = F, rotation = T,
                             values = F, stopiffalse = F,
                             showwarning = F) == F) {
+            # If this mask doesn't match the base it is resampled
             r.crp <- resample(r.crp, r.crp.bs, method = "bilinear")
           }
+          # Add the current mask to the stack
           r.stk <- stack(r.stk, r.crp)
+          # Add this mask values to a reference data frame
           df1 <- rbind.data.frame(df1, data.frame(SCN = c,
                                                   Year = scn.year,
                                                   VI = vi.mdn,
@@ -129,8 +140,10 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
       }
     }
   }
+  # The following will leave only one image per year
   if (length(unique(df1$Year)) < length(df1$Year)) {
     for (d in unique(df1$Year)) {
+      # Leave the one with highest median
       vi.max <- max(df1[df1$Year == d, "VI"])
       df2 <- rbind.data.frame(df2, df1[df1$VI == vi.max,])
     }
@@ -140,7 +153,9 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   } else {
     r.stk2 <- r.stk
   }
+  # Project stack
   r.stk2 <- projectRaster(r.stk2, crs = prj.str, method = "bilinear")
+  # Return to original working directory
   setwd(curr.wd)
   return(r.stk2)
 }
@@ -156,18 +171,22 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
   require(classInt)
   require(raster)
   nw.vls <- val
+  # Cut the data in the selected number of classes
   cut.vals <- classIntervals(raster.lyr[!is.na(raster.lyr)], n = n.class, style = style)$brks
+  # Reclassification matrix
   mat <- as.matrix(data.frame(from = cut.vals[1:n.class],
                               to = cut.vals[2:(n.class + 1)],
                               beco = nw.vls))
+  # Reclassification according to matrix
   raster.rcls <- reclassify(raster.lyr, mat, include.lowest = T)
   return(raster.rcls)
 }
 
 #Rsaga DEM Covariates
-dem_cov <- function(DEM.layer) {
-  if (class(DEM.layer)[1] != "SpatialPointsDataFrame") {
-    stop("DEM.layer isn't a SpatialPointsDataFrame object")
+dem_cov <- function(DEM.layer, dem.attr = "DEM") {
+  if (class(DEM.layer)[1] != "SpatialPointsDataFrame" |
+        class(DEM.layer) != "RasterLayer") {
+    stop("DEM.layer isn't a SpatialPointsDataFrame  or RasterLayer object")
   }
   require(sp)
   require(RSAGA)
@@ -175,24 +194,35 @@ dem_cov <- function(DEM.layer) {
   if ("./DEM_derivates" %in% list.dirs()) {
     unlink("./DEM_derivates", recursive = T, force = T)
   }
+  # Topography derivates folder creation
   dir.create("DEM_derivates")
+  # Save current directory
   curr.wd <- getwd()
   setwd("./DEM_derivates")
-  base.lyr <- DEM.layer
-  lyr.crs <- CRS(proj4string(base.lyr))
-  base.spix <- SpatialPixelsDataFrame(base.lyr,
-                                      data = base.lyr@data["DEM"],
-                                      proj4string = lyr.crs)
-  base.rstr <- raster(base.spix)
+  # Store dem layer CRS
+  lyr.crs <- CRS(proj4string(DEM.layer))
+  # If layer is SPDF convert to raster
+  if (class(base.lyr)[1] != "SpatialPointsDataFrame") {
+    base.spix <- SpatialPixelsDataFrame(DEM.layer,
+                                        data = base.lyr@data[dem.attr],
+                                        proj4string = lyr.crs)
+    base.rstr <- raster(base.spix)
+  } else {
+    base.rstr <- DEM.layer
+  }
   dem.file <- "dem.tif"
+  # Save raster as GeoTIFF
   writeRaster(base.rstr, dem.file)
+  # Convert GeoTIFF to Saga Grid
   rsaga.import.gdal(dem.file, show.output.on.console = F)
+  # Calculate Slope and Aspect
   rsaga.geoprocessor("ta_morphometry", module = 0,
                      param = list(ELEVATION = "dem.sgrd",
                                   SLOPE = "Slope",
                                   ASPECT = "Aspect",
                                   METHOD = 1),
                      show.output.on.console = F)
+  # Calculate Curvatures
   rsaga.geoprocessor("ta_morphometry", module = 0,
                      param = list(ELEVATION = "dem.sgrd",
                                   CURV = "Curv",
@@ -200,39 +230,56 @@ dem_cov <- function(DEM.layer) {
                                   VCURV = "PlCurv",
                                   METHOD = 5),
                      show.output.on.console = F)
+  # Calculate Catchment Area
   rsaga.geoprocessor("ta_hydrology", module = 18,
                      param = list(DEM = "dem.sgrd",
                                   AREA = "Catch_Area"),
                      show.output.on.console = F)
+  # Calculate CTI
   rsaga.geoprocessor("ta_hydrology", module = 20,
                      param = list(SLOPE = "Slope.sgrd",
                                   AREA = "Catch_Area.sgrd",
                                   TWI = "CTI"),
                      show.output.on.console = F)
+  # Calculate Convergence Index
   rsaga.geoprocessor("ta_morphometry", module = 1,
                      param = list(ELEVATION = "dem.sgrd",
                                   RESULT = "Conv_Index"),
                      show.output.on.console = F)
+  # Calculate LS Factor
   rsaga.geoprocessor("ta_hydrology", module = 22,
                      param = list(SLOPE = "Slope.sgrd",
                                   AREA = "Catch_Area.sgrd",
                                   LS = "LS_Factor",
                                   METHOD = 2),
                      show.output.on.console = F)
+  # Calculate Saga Wetness Index
   rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
                       show.output.on.console = F)
+  # List all grid files created
   sgrd.lst <- list.files(".", pattern = ".sgrd$")
   sgrd.lst <- sgrd.lst[!(sgrd.lst %in% "dem.sgrd")]
+  # Iterate over list of grids
   for (a in sgrd.lst) {
+    # Get name for tiff
     tif.name <- paste0(sub(".sgrd", "", a), ".tif")
+    # Convert Saga grid to GeoTIFF
     rsaga.geoprocessor("io_gdal", module = 2,
                        param = list(GRIDS = a,
                                     FILE = tif.name),
                        show.output.on.console = F)
+    # Open tiff as RasterLayer
     terr.tif <- raster(tif.name)
+    # Get data from the tiff that intersects with points
     terr.data <- extract(terr.tif, base.lyr)
+    # Get name for column in attribute table
     attr.name <- sub(".sgrd", "", a)
+    # Add column to SPDF
     base.lyr@data[attr.name] <- terr.data
+  }
+  if (any(is.na(base.lyr@data))) {
+    require(DMwR)
+    base.lyr@data <- knnImputation(base.lyr@data)
   }
   setwd(curr.wd)
   return(base.lyr)
@@ -241,22 +288,28 @@ dem_cov <- function(DEM.layer) {
 # Defining the MBA interpolation function
 int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, krig = F) {
   if (substr(class(base.pnts), 1, 13)[1] != "SpatialPoints" |
-        substr(class(obs.pnts), 1, 13)[1] != "SpatialPoints") {
+        class(obs.pnts)[1] != "SpatialPointsDataFrame") {
     stop("at least one of the inputs isn't a SpatialPoints* object")
   }
   require(sp)
   require(MBA)
   base.map <- base.pnts
+  # Creation of prediction grid from base points
   pred.grid <- base.map@coords
+  # Duplicate deletion
   if (length(zerodist(obs.pnts)) == 0) {
     obs.pnts <- remove.duplicates(obs.pnts)
   }
   obs.map <- obs.pnts
+  # For every variable to interpolate do...
   for (a in vrbl) {
+    # Leave positive values
     obs.vrbl <- subset(obs.map, eval(parse(text = a)) > 0)
+    # Delete NAs
     obs.vrbl <- obs.vrbl[!is.na(obs.vrbl@data[, a]),]
+    # Get vector of numbers
     vrbl.data <- obs.vrbl@data[, a]
-    # cleaning by spatial association
+    # Cleaning by spatial association
     if (moran) {
       obs.vrbl <- moran_cln(obs.vrbl, a, dist = dist)
       vrbl.data <- obs.vrbl@data[, a]
@@ -273,30 +326,43 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, k
       }
     }
     if (krig) {
-      # variogram fitting
+      # Try fit fit variogram
       vg.fit <- try(var_fit(obs.vrbl, a, cln = F), silent = T)
+      # If it didn't result in error, krige
       if (class(vg.fit)[1] != "try-error") {
+        # Krig with fitted lambda
         vrbl.krig <- krige((vrbl.data ^ vg.fit[[1]]) ~ 1, locations = obs.vrbl,
                            newdata = base.map, model = vg.fit[[3]])
+        # Reverse conversion with lambda to obtain original units
         vrbl.krig@data[, 1] <- vrbl.krig@data[, 1] ^ (1 / vg.fit[[1]])
+        # Add data to layer
         base.map@data[, a] <- vrbl.krig@data[, 1]
+        # Create new layer to plot variable and prediction variance
         map.plot <- base.map[a]
         map.plot@data[paste0(a, "_var")] <- vrbl.krig@data[, 2]
-        # save a plot of the variogram
+        # save a pdf of variogram and kriging
         pdf(paste0(a, ".pdf"), paper = "letter", width = 0, height = 0)
         #layout(matrix(c(1,1,2,3), 2, 2, byrow = TRUE))
+        # Plot exp and fitted variogram
         print(plot(vg.fit[[2]], model = vg.fit[[3]], pch = 21, cex = 2, lty = 2, lwd = 2,
                    col = "red", xlab = "Distance", ylab = "Semivariance",
                    main = paste0("Emp. & fitted semivariogram for ", a)))
+        # Plot prediction and prediction variance
         par(mfrow = c(2, 1))
         plot(pnt2rstr(map.plot, c(a, paste0(a, "_var"))), y = 1, col = cols(255))
         plot(pnt2rstr(map.plot, c(a, paste0(a, "_var"))), y = 2, col = rev(cols(255)))
         dev.off()
+        # If variogram fitting wasn't successful go with MBA
       } else {
+        # Create predicion matrix needed by MBA
         obs.mat <- cbind(obs.vrbl@coords[, 1:2], vrbl.data)
+        # Interpolate
         obs.mba <- mba.points(obs.mat, pred.grid, verbose = F)
+        # transform prediction to data.frame
         obs.mba <- data.frame(obs.mba$xyz.est)
+        # Replace possible negative values with zeroes
         obs.mba[obs.mba$z < 0, 3] <- 0
+        # Add data to layer
         base.map@data[, a] <- obs.mba$z
       }
     } else {
@@ -307,6 +373,7 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, k
       base.map@data[, a] <- obs.mba$z
     }
   }
+  # Return original base layer with added columns
   return(base.map)
 }
 
@@ -355,28 +422,35 @@ hyb_pp <- function(hybrid, exp.yld, step = 1235) {
   }
 }
 
-presc_grid <- function(sp.layer, pred.model, hybrid, points = T, fill = F, quantile = 0.5, step = 1235) {
-  if (substr(class(sp.layer), 1, 13)[1] != "SpatialPoints") {
-    stop("sp.layer isn't a SpatialPoints* object")
+presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
+                       fill = F, quantile = NULL, step = 1235) {
+  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+    stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(sp)
+  # If one wants the NAs can be filled
   if (fill) {
-    if (nrow(sp.layer@data) > nrow(na.omit(sp.layer@data))) {
+    if (any(is.na(sp.layer@data))) {
       require(DMwR)
+      # Impute de missing data
       sp.layer@data <- knnImputation(sp.layer@data)
     }
   }
+  # If the results are needed in polygon
   if (points == F) {
     require(raster)
     lyr.crs <- CRS(proj4string(sp.layer))
     sp.spix <- SpatialPixelsDataFrame(sp.layer,
                                       data = data.frame(1:nrow(sp.layer@data)),
                                       proj4string = lyr.crs)
+    # Convert to raster
     sp.r <- raster(sp.spix)
+    # Convert to polygons
     sp.poly <- rasterToPolygons(sp.r, dissolve = F)
   } else {
     sp.poly <- sp.layer
   }
+  # The next steps according to the prediction model selet the used variables
   if (class(pred.model)[1] == "randomForest") {
     require(randomForest)
     usd.var <- dimnames(pred.model$importance)[[1]]
@@ -393,12 +467,19 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T, fill = F, quant
     require(gbm)
     usd.var <- pred.model$var.names
   }
+  if (class(datab.extr) == "extraTrees") {
+    usd.var <- names(sp.layer)
+  }
+  # Create column with specific hybrid
   sp.poly@data <- data.frame(Hybrid = rep(hybrid, nrow(sp.poly@data)))
+  # Create expected yield column with prediction
   sp.poly@data["Exp_Yld"] <- predict(pred.model, sp.layer@data[usd.var],
                                      quantiles = quantile)
+  # If germplasm is an inbred line divide prediction by 2
   if (hyb.param[9, hybrid] == "L") {
     sp.poly@data["Exp_Yld"] <- sp.poly@data["Exp_Yld"] / 2
   }
+  # Calculate plant population according to expected yield
   sp.poly@data["PP"] <- hyb_pp(hybrid, sp.poly@data[, "Exp_Yld"], step)
   return(sp.poly)
 }
@@ -407,16 +488,22 @@ grd_m <- function(sp.layer, dist = 10) {
   if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
     stop("sp.layer isn't a SpatialPolygons* object")
   }
-  if (summary(sp.layer)$is.projected == F) {
+  # If in WGS84 project to UTM
+  if (is.projected(sp.layer) == F) {
     library(rgdal)
     sp.layer <- spTransform(sp.layer, prj.str)
   }
   require(sp)
+  # Get bounding box
   lyr.bb <- sp.layer@bbox
+  # Calculate regularly spaced coordinates
   grd.1 <- expand.grid(x = seq(lyr.bb[1, 1], lyr.bb[1, 2], by = dist),
                        y = seq(lyr.bb[2, 1], lyr.bb[2, 2], by = dist))
+  # Get layer CRS
   grd.crs <- CRS(proj4string(sp.layer))
+  # Create SPDF from regular coordinates
   grd.1 <- SpatialPointsDataFrame(grd.1, data = grd.1, proj4string = grd.crs)
+  # Remove the ones outside the boundary
   grd.inp <- !is.na(over(grd.1, SpatialPolygons(sp.layer@polygons,
                                                 proj4string = grd.crs)))
   grd.1 <- grd.1[grd.inp,]
@@ -428,31 +515,42 @@ mz_smth <- function(sp.layer, area = 2500) {
         class(sp.layer)[1] == "RasterLayer") {
     require(rgrass7)
     require(raster)
+    # If the input is a raster convert to polygons and dissolve by zone
     if (class(sp.layer) == "RasterLayer") {
       sp.layer <- rasterToPolygons(sp.layer, dissolve = T, na.rm = T)
     }
-    if (summary(sp.layer)$is.projected == F) {
+    # If in WGS84 project to UTM
+    if (is.projected(sp.layer) == F) {
       library(rgdal)
       sp.layer <- spTransform(sp.layer, prj.str)
     }
+    # Check wether GRASS is running, else initialize
     if (nchar(Sys.getenv("GISRC")) == 0) {
       initGRASS(gisBase = "c:/Program Files (x86)/GRASS GIS 7.0.0",
                 override = TRUE)
     }
+    # Convert multipart to singlepart
     sp.layer <- disaggregate(sp.layer)
     zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+    # Convert name 'layer' to 'Zone'
     names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
+    # Write GRASS vector
     writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
     zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+    # Smooth lines of polygons
     execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
               output = zm.gnrl, method = "snakes", threshold = 1)
     zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+    # Remove small/sliver polygons
     execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.gnrl,
               output = zm.cln, tool = "rmarea", threshold = area)
+    # Read back cleaned layer
     zm.fnl <- readVECT(zm.cln)
+    # If no CRS, define one
     if (is.na(zm.fnl@proj4string)) {
       proj4string(zm.fnl) <- prj.str
     }
+    # Remove 'cat' column from data.frame
     zm.fnl@data["cat"] <- NULL
     return(zm.fnl)
   } else {
@@ -466,8 +564,15 @@ pnt2rstr <- function(sp.layer, field = names(sp.layer)){
   }
   require(sp)
   require(raster)
+  # Get layer CRS
   lyr.crs <- CRS(proj4string(sp.layer))
+  # Check if there's more than one field to convert to raster
+  p2g <- try(points2grid(sp.layer))
+  if (class(p2g)[1] == "try-error") {
+    stop("points aren't regularly spaced")
+  }
   if (length(field) > 1) {
+    # Create empty stack
     sp.rstr <- stack()
     for (a in field) {
       if (a %in% names(sp.layer@data) == F) {
@@ -494,7 +599,8 @@ geo_centroid <- function(sp.layer){
   if (substr(class(sp.layer), 1, 7)[1] != "Spatial") {
     stop("sp.layer isn't a Spatial* object")
   }
-  if (summary(sp.layer)$is.projected == T) {
+  # If in UTM project to WGS84
+  if (is.projected(sp.layer) == T) {
     library(rgdal)
     sp.layer <- spTransform(sp.layer, geo.str)
   }
@@ -510,19 +616,31 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
+  # Identify neighbours points by Euclidean distance
   nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
+  # Get number of neighbours in the neighbours list
   nb.crd <- card(nb.lst)
+  # Remove points with no neighbors
   spl.noznb <- subset(sp.layer, nb.crd > 0)
+  # Also in neighbor list
   nb.noznb <- subset(nb.lst, nb.crd > 0)
+  # Convert cleaned neighbor list to spatial weighted list
   w.mat <- nb2listw(nb.noznb, style = "W")
+  # Get numerical data of variable
   vrbl.dt <- spl.noznb@data[, vrbl]
+  # Calculate moran scatterplot parameters
   mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
+  # Get those rows where at least one index is TRUE
   mp.out <- which(rowSums(matrix(as.numeric(mp$is.inf), ncol = 6)) != 0)
-  lm <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
+  # Calculate local moran
+  lmo <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
                    alternative = "less")
-  lm <- data.frame(lm)
-  lm.out <- which(lm[, "Ii"] <= 0 | lm[, "Pr.z...0."] <= 0.05)
+  lmo <- data.frame(lmo)
+  # Get rows wheres indices are significative
+  lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
+  # Get the unique rows to delete
   all.out <- unique(c(mp.out, lm.out))
+  # Remove them from SPDF
   spl.noznb <- spl.noznb[-all.out, ]
   return(spl.noznb)
 }
@@ -535,39 +653,52 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   require(MASS)
   require(gstat)
   vrbl.nm <- vrbl
+  # Leave only positive observed values
   vrbl.spdt <- subset(sp.layer, eval(parse(text = vrbl.nm)) > 0)
+  # Remove NAs
   vrbl.spdt <- vrbl.spdt[!is.na(vrbl.spdt@data[, vrbl.nm]),]
+  # Remove extra coordinate dimensions other than x, y
   if (ncol(vrbl.spdt@coords) > 2) {
     vrbl.spdt@coords <- vrbl.spdt@coords[, 1:2]
   }
+  # Remove duplicates if any
   if (length(zerodist(vrbl.spdt)) == 0) {
     vrbl.spdt <- remove.duplicates(vrbl.spdt)
   }
+  # Numeric data vector
   vrbl.dt <- vrbl.spdt@data[, vrbl.nm]
-  # cleaning
+  # Cleaning from distribution
   if (cln) {
     require(robustbase)
+    # Get outliers
     vrbl.out <- adjboxStats(vrbl.dt)$out
+    # If any they are removed
     if (length(vrbl.out)>0) {
       vrbl.spdt <- vrbl.spdt[!(vrbl.dt %in% vrbl.out),]
       vrbl.dt <- vrbl.spdt@data[, vrbl.nm]
     }
   }
+  # Set number of samples according to size
   ifelse(length(vrbl.spdt) > 5000, n.samp <- 5000, n.samp <- length(vrbl.spdt))
+  # Assing object in Global Environment for lineal model
   assign(".vrbl.dt", vrbl.dt, envir = .GlobalEnv)
+  # Lambda calculation for normality
   vrbl.bc <- boxcox(lm(.vrbl.dt ~ 1), lambda = seq(-5, 5, 0.01), plotit = F)
+  # Delete GlobalEnv object
   remove(".vrbl.dt", envir = .GlobalEnv)
+  # Test for normality and assignment of lambda
   ifelse(shapiro.test(sample(vrbl.dt, n.samp))$p.value < 0.05,
          lmbd <- vrbl.bc[["x"]][which.max(vrbl.bc[["y"]])],
          lmbd <- 1)
+  # Calculation of maximum distance
   max.dist <- max(spDistsN1(vrbl.spdt, vrbl.spdt[1,]))
   #use.dist <- max.dist / 3
-  #variogram models
+  # Variogram models
   vg.mods <- data.frame(short = c("Exp", "Sph", "Gau", "Mat", "Cir", "Wav"),
                         long = c("exponential", "spherical", "gaussian", "matern",
                                  "circular", "wave"),
                         stringsAsFactors = F)
-  #autofit
+  # Autofit to get initial parameters
   auto.vgm <- tryCatch(autofitVariogram((vrbl.dt ^ lmbd) ~ 1,
                                         vrbl.spdt,model = vg.mods[, 1],
                                         kappa = seq(0.01, 3, by = 0.01),
@@ -586,14 +717,16 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   if ((max(auto.vgm$var_model[, 2]) - min(auto.vgm$var_model[, 2])) < 0.0001) {
     stop("a variogram could not be fitted")
   }
+  # Short and long varigogram models
   sh.mod <- as.character(auto.vgm$var_model$model[2])
   lg.mod <- vg.mods[vg.mods[1] == sh.mod, 2]
-  # variogram creation
+  # Experimental variogram creation
   vrbl.vgm <- variogram((vrbl.dt ^ lmbd) ~ 1, locations = vrbl.spdt, cressie = T)
+  # Initial nugget, sill and range
   inug <- auto.vgm$var_model[1, 2]
   isill <- auto.vgm$var_model[2, 2]
   irange <- auto.vgm$var_model[2, 3]
-  #fit with selected parameters
+  # Theoretical variogram fitting with selected parameters
   fit.res <- tryCatch(fit.variogram(vrbl.vgm, vgm(isill, sh.mod, irange, inug),
                                     fit.sills = T, fit.ranges = T,
                                     warn.if.neg = T),
@@ -605,6 +738,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   } else {
     vrbl.fit <- fit.res
   }
+  # Wether to plot the variograms (exp & fit)
   if (plot) {
     print(
       plot(vrbl.vgm, model = vrbl.fit, pch = 21, cex = 2, lty = 2, lwd = 2,
@@ -612,6 +746,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
            main = paste0("Emp. & fitted semivariogram for ", vrbl.nm))
     )
   }
+  #Return a list with: lambda, experimental and fitted variogram
   return(list(lmbd, vrbl.vgm, vrbl.fit))
 }
 
