@@ -628,13 +628,23 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
   w.mat <- nb2listw(nb.noznb, style = "W")
   # Get numerical data of variable
   vrbl.dt <- spl.noznb@data[, vrbl]
+  # Compute the lag vector V x
+  wx <- lag.listw(w.mat, vrbl.dt)
+  # Lineal model of lagged vs observed variable
+  xwx.lm <- lm(wx ~ vrbl.dt)
+  # Compute regression (leave-one-out deletion) diagnostics for linear model
+  # and only get get the logical influence matrix
+  infl.xwx <- influence.measures(xwx.lm)[["is.inf"]]
+  # Convert to numeric, 6 column matrix for computation of sums
+  infl.mat <- matrix(as.numeric(infl.xwx), ncol = 6)
   # Calculate moran scatterplot parameters
-  mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
+  #mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
   # Get those rows where at least one index is TRUE
-  mp.out <- which(rowSums(matrix(as.numeric(mp$is.inf), ncol = 6)) != 0)
+  mp.out <- which(rowSums(infl.mat) != 0)
   # Calculate local moran
   lmo <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
-                   alternative = "less")
+                    alternative = "less")
+  # Convert to data.frame to select data
   lmo <- data.frame(lmo)
   # Get rows wheres indices are significative
   lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
