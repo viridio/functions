@@ -16,11 +16,17 @@ elev_cols <- colorRampPalette(c("#AFF0E9", "#FFFFB3", "#008040", "#FCBA03",
                               space = "Lab")
 
 # Electrical conductivity color ramp
-ec_cols <- colorRampPalette(c("#F2F1A2", "#FFFF00", "#FF0000", "#B007ED",
-                              "#071DAD"), space = "Lab")
+ec_cols <- colorRampPalette(c("#2892C7", "#FAFA64", "#E81014"), space = "Lab")
 
 # Organic matter color ramp
 om_cols <- colorRampPalette(c("#D6D69C", "#734D00", "#000000"), space = "Lab")
+
+# SWI color ramp
+swi_cols <- colorRampPalette(c("#C2523C", "#EDA113", "#FFFF00", "#00DB00", 
+                               "#20998F", "#0B2C7A"), space = "Lab")
+
+# CEC color ramp
+cec_cols <- colorRampPalette(c("#BA1414", "#FFFFBF", "#369121"), space = "Lab")
 
 lndst_01 <- readOGR("~/SIG/Geo_util/raster/arg/", "lndst_scn_g")
 
