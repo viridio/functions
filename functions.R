@@ -1115,4 +1115,4 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
-     om_cal, trat_grd, multi_mz, file = "~/SIG/Geo_util/Functions.RData")
+     var_cal, trat_grd, multi_mz, file = "~/SIG/Geo_util/Functions.RData")
