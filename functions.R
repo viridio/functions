@@ -842,14 +842,14 @@ veris_import <- function(){
 }
 
 
-var_cal <- function(sp.layer, var = 'OM'){
+var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
   require(rgdal)
   require(rgeos)
   require(ggplot2)
   require(reshape2)
   require(gridExtra)
   
-  soil <- readOGR("./Soil", "soil_select_veris")
+  soil <- readOGR("./Soil", soil.layer)
   # soil <- readOGR("./Soil", "soil")
   if (summary(soil)$is.projected == F) {
     soil <- spTransform(soil, prj.str)
@@ -946,6 +946,7 @@ var_cal <- function(sp.layer, var = 'OM'){
     
     title <- paste0('Min:', format(min(sp.layer$Pred), digits = 2),
                     ' / Median:', format(median(sp.layer$Pred), digits = 2),
+                    ' / Mean:', format(mean(sp.layer$Pred), digits = 2),
                     ' / Max:', format(max(sp.layer$Pred), digits = 2))
     plot3 <- ggplot(sp.layer@data, aes(x = Pred, y = ..density..)) + 
       geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
