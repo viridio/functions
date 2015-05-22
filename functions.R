@@ -842,7 +842,7 @@ veris_import <- function(){
 }
 
 
-om_cal <- function(veris, var = 'OM'){
+var_cal <- function(sp.layer, var = 'OM'){
   require(rgdal)
   require(rgeos)
   require(ggplot2)
@@ -854,6 +854,7 @@ om_cal <- function(veris, var = 'OM'){
   if (summary(soil)$is.projected == F) {
     soil <- spTransform(soil, prj.str)
   }
+  soil <- soil[soil@data[,var]>0,]
   # Create buffer of 10 m
   soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
   join <- over(soil.buf, veris, fn = mean)
@@ -913,10 +914,10 @@ om_cal <- function(veris, var = 'OM'){
     label <- paste('Model N°', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
     pred.int <- predict(model, newdata = veris@data[vrbl.lm])
-    veris@data[paste0('Pred_', var)] <- pred.int
+    veris@data['Pred'] <- pred.int
     plot1 <- ggplot() +
-      geom_raster(data = veris@data, aes(x, y, fill = Pred_OM)) +
-      coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = paste0('Pred_', var), title = label) +
+      geom_raster(data = veris@data, aes(x, y, fill = Pred)) +
+      coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'Pred', title = label) +
       scale_fill_gradientn(colours = cols(255)) + theme_bw() + 
       geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
       theme(plot.title = element_text(size = 14, face = 'bold'),
@@ -926,12 +927,12 @@ om_cal <- function(veris, var = 'OM'){
     
     join <- over(soil.buf, veris, fn = mean)
     cal <- cbind(join, soil@data)
-    var.nm <- match("OM", names(cal))
-    names(cal)[var.nm] <- paste0('Lab_', var)
-    cal.fit <- lm(Lab_OM ~ Pred_OM, data = cal)
+    var.nm <- match(var, names(cal))
+    names(cal)[var.nm] <- 'Lab'
+    cal.fit <- lm(Lab ~ Pred, data = cal)
     eqn <- paste("r2:", format(summary(cal.fit)$adj.r.squared, digits=2), "/", "RMSE:", 
                  format(summary(cal.fit)$sigma, digits=2))
-    plot2 <- ggplot(data = cal, aes(Lab_OM, Pred_OM)) +
+    plot2 <- ggplot(data = cal, aes(Lab, Pred)) +
       geom_point(size = 2) +
       theme_bw() +
       stat_smooth(method = lm, se = F, size = 0.5) +
@@ -943,11 +944,11 @@ om_cal <- function(veris, var = 'OM'){
       annotate("text", label = eqn, parse = TRUE, x = Inf, y = -Inf,
                hjust = 1.1, vjust = -.5)
     
-    title <- paste0('Min:', format(min(veris$Pred_OM), digits = 2),
-                    ' / Median:', format(median(veris$Pred_OM), digits = 2),
-                    ' / Max:', format(max(veris$Pred_OM), digits = 2))
-    plot3 <- ggplot(veris@data, aes(x = Pred_OM, y = ..density..)) + 
-      geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
+    title <- paste0('Min:', format(min(veris$Pred), digits = 2),
+                    ' / Median:', format(median(veris$Pred), digits = 2),
+                    ' / Max:', format(max(veris$Pred), digits = 2))
+    plot3 <- ggplot(veris@data, aes(x = Pred, y = ..density..)) + 
+      geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
       geom_density() +
       labs(x = paste(var, "Predicho"), title = title) +
       theme(axis.text = element_text(size = 10),
