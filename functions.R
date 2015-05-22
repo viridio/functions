@@ -1081,9 +1081,9 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   # Creation of the spatial weighted neighbor list
   sp.w <- nb2listw(n.neigh, style = "W")
   # Calculation of the PCA on the selected variables
-  data.pca <- dudi.pca(df, center = T, scannf = F, nf = 5)
+  data.pca <- dudi.pca(df, center = T, scannf = F)
   # Run of multispati function
-  sp.mltspt <- multispati(data.pca, sp.w, scannf = F, nfposi = 5)
+  sp.mltspt <- multispati(data.pca, sp.w, scannf = F)
   # Creation of a SPDF with the created Spatial components
   sp.pca <- SpatialPointsDataFrame(sp.layer,
                                    data.frame(sp.mltspt$li),
@@ -1100,7 +1100,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   }
   cs1 <- data.frame("Variable" = row.names(data.pca$c1), "CS1" = data.pca$c1)
   row.names(cs1) <- NULL
-  names(cs1)[2:6] <- paste0("CS", 1:5)
+  names(cs1)[2:ncol(cs1)] <- paste0("CS", 1:(ncols(cs1)-1))
   cs1 <- cs1[order(-abs(cs1[, 2])),]
   row.names(cs1) <- NULL
   # Clusterization of the first component in the selected number of clusters
