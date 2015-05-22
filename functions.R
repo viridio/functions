@@ -857,7 +857,7 @@ var_cal <- function(sp.layer, var = 'OM'){
   soil <- soil[soil@data[,var]>0,]
   # Create buffer of 10 m
   soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
-  join <- over(soil.buf, veris, fn = mean)
+  join <- over(soil.buf, sp.layer, fn = mean)
   cal.db <- cbind(join, soil@data)
   
   lm1 <- as.formula(paste(var, '~', paste(c('Red', 'IR'), collapse = ' + ')))
@@ -889,7 +889,7 @@ var_cal <- function(sp.layer, var = 'OM'){
       names(data.lm) <- sub(var, "actual", names(data.lm))
       
       # Prediction and interpolation on veris.shp
-      pred.int <- predict(model, newdata = veris@data[vrbl.lm])
+      pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
       lm.summ[i, 'model'] <- i
       lm.summ[i, 'min'] <- min(pred.int)
       lm.summ[i, 'max'] <- max(pred.int)
@@ -913,10 +913,10 @@ var_cal <- function(sp.layer, var = 'OM'){
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
     label <- paste('Model N°', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
-    pred.int <- predict(model, newdata = veris@data[vrbl.lm])
-    veris@data['Pred'] <- pred.int
+    pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
+    sp.layer@data['Pred'] <- pred.int
     plot1 <- ggplot() +
-      geom_raster(data = veris@data, aes(x, y, fill = Pred)) +
+      geom_raster(data = sp.layer@data, aes(x, y, fill = Pred)) +
       coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'Pred', title = label) +
       scale_fill_gradientn(colours = cols(255)) + theme_bw() + 
       geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
@@ -925,7 +925,7 @@ var_cal <- function(sp.layer, var = 'OM'){
             axis.title.x = element_text(size = 12, face = 'bold'),
             axis.title.y = element_text(size = 12, face = 'bold'))
     
-    join <- over(soil.buf, veris, fn = mean)
+    join <- over(soil.buf, sp.layer, fn = mean)
     cal <- cbind(join, soil@data)
     var.nm <- match(var, names(cal))
     names(cal)[var.nm] <- 'Lab'
@@ -944,10 +944,10 @@ var_cal <- function(sp.layer, var = 'OM'){
       annotate("text", label = eqn, parse = TRUE, x = Inf, y = -Inf,
                hjust = 1.1, vjust = -.5)
     
-    title <- paste0('Min:', format(min(veris$Pred), digits = 2),
-                    ' / Median:', format(median(veris$Pred), digits = 2),
-                    ' / Max:', format(max(veris$Pred), digits = 2))
-    plot3 <- ggplot(veris@data, aes(x = Pred, y = ..density..)) + 
+    title <- paste0('Min:', format(min(sp.layer$Pred), digits = 2),
+                    ' / Median:', format(median(sp.layer$Pred), digits = 2),
+                    ' / Max:', format(max(sp.layer$Pred), digits = 2))
+    plot3 <- ggplot(sp.layer@data, aes(x = Pred, y = ..density..)) + 
       geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
       geom_density() +
       labs(x = paste(var, "Predicho"), title = title) +
