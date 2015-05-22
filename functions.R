@@ -1100,7 +1100,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   }
   cs1 <- data.frame("Variable" = row.names(data.pca$c1), "CS1" = data.pca$c1)
   row.names(cs1) <- NULL
-  names(cs1)[2:ncol(cs1)] <- paste0("CS", 1:(ncols(cs1)-1))
+  names(cs1)[2:ncol(cs1)] <- paste0("CS", 1:(ncol(cs1)-1))
   cs1 <- cs1[order(-abs(cs1[, 2])),]
   row.names(cs1) <- NULL
   # Clusterization of the first component in the selected number of clusters
