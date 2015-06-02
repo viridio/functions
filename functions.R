@@ -938,21 +938,22 @@ veris_import <- function(){
 }
 
 
-om_cal <- function(veris, var = 'OM'){
+var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
   require(rgdal)
   require(rgeos)
   require(ggplot2)
   require(reshape2)
   require(gridExtra)
   
-  soil <- readOGR("./Soil", "soil_select_veris")
+  soil <- readOGR("./Soil", soil.layer)
   # soil <- readOGR("./Soil", "soil")
   if (summary(soil)$is.projected == F) {
     soil <- spTransform(soil, prj.str)
   }
+  soil <- soil[soil@data[,var]>0,]
   # Create buffer of 10 m
   soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
-  join <- over(soil.buf, veris, fn = mean)
+  join <- over(soil.buf, sp.layer, fn = mean)
   cal.db <- cbind(join, soil@data)
   
   lm1 <- as.formula(paste(var, '~', paste(c('Red', 'IR'), collapse = ' + ')))
@@ -984,7 +985,7 @@ om_cal <- function(veris, var = 'OM'){
       names(data.lm) <- sub(var, "actual", names(data.lm))
       
       # Prediction and interpolation on veris.shp
-      pred.int <- predict(model, newdata = veris@data[vrbl.lm])
+      pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
       lm.summ[i, 'model'] <- i
       lm.summ[i, 'min'] <- min(pred.int)
       lm.summ[i, 'max'] <- max(pred.int)
@@ -1008,11 +1009,11 @@ om_cal <- function(veris, var = 'OM'){
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
     label <- paste('Model N°', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
-    pred.int <- predict(model, newdata = veris@data[vrbl.lm])
-    veris@data[paste0('Pred_', var)] <- pred.int
+    pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
+    sp.layer@data['Pred'] <- pred.int
     plot1 <- ggplot() +
-      geom_raster(data = veris@data, aes(x, y, fill = Pred_OM)) +
-      coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = paste0('Pred_', var), title = label) +
+      geom_raster(data = sp.layer@data, aes(x, y, fill = Pred)) +
+      coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'Pred', title = label) +
       scale_fill_gradientn(colours = cols(255)) + theme_bw() + 
       geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
       theme(plot.title = element_text(size = 14, face = 'bold'),
@@ -1020,14 +1021,14 @@ om_cal <- function(veris, var = 'OM'){
             axis.title.x = element_text(size = 12, face = 'bold'),
             axis.title.y = element_text(size = 12, face = 'bold'))
     
-    join <- over(soil.buf, veris, fn = mean)
+    join <- over(soil.buf, sp.layer, fn = mean)
     cal <- cbind(join, soil@data)
-    var.nm <- match("OM", names(cal))
-    names(cal)[var.nm] <- paste0('Lab_', var)
-    cal.fit <- lm(Lab_OM ~ Pred_OM, data = cal)
+    var.nm <- match(var, names(cal))
+    names(cal)[var.nm] <- 'Lab'
+    cal.fit <- lm(Lab ~ Pred, data = cal)
     eqn <- paste("r2:", format(summary(cal.fit)$adj.r.squared, digits=2), "/", "RMSE:", 
                  format(summary(cal.fit)$sigma, digits=2))
-    plot2 <- ggplot(data = cal, aes(Lab_OM, Pred_OM)) +
+    plot2 <- ggplot(data = cal, aes(Lab, Pred)) +
       geom_point(size = 2) +
       theme_bw() +
       stat_smooth(method = lm, se = F, size = 0.5) +
@@ -1039,11 +1040,12 @@ om_cal <- function(veris, var = 'OM'){
       annotate("text", label = eqn, parse = TRUE, x = Inf, y = -Inf,
                hjust = 1.1, vjust = -.5)
     
-    title <- paste0('Min:', format(min(veris$Pred_OM), digits = 2),
-                    ' / Median:', format(median(veris$Pred_OM), digits = 2),
-                    ' / Max:', format(max(veris$Pred_OM), digits = 2))
-    plot3 <- ggplot(veris@data, aes(x = Pred_OM, y = ..density..)) + 
-      geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
+    title <- paste0('Min:', format(min(sp.layer$Pred), digits = 2),
+                    ' / Median:', format(median(sp.layer$Pred), digits = 2),
+                    ' / Mean:', format(mean(sp.layer$Pred), digits = 2),
+                    ' / Max:', format(max(sp.layer$Pred), digits = 2))
+    plot3 <- ggplot(sp.layer@data, aes(x = Pred, y = ..density..)) + 
+      geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
       geom_density() +
       labs(x = paste(var, "Predicho"), title = title) +
       theme(axis.text = element_text(size = 10),
@@ -1210,5 +1212,9 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
+<<<<<<< HEAD
      om_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm,
      file = "~/SIG/Geo_util/Functions.RData")
+=======
+     var_cal, trat_grd, multi_mz, file = "~/SIG/Geo_util/Functions.RData")
+>>>>>>> 378cbc6a551898e652c9d9ef446c526bd6b5b940
