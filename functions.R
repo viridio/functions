@@ -937,7 +937,6 @@ veris_import <- function(){
   return(veris.pnt)
 }
 
-
 var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
   require(rgdal)
   require(rgeos)
