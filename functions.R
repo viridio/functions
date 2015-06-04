@@ -205,7 +205,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   return(r.stk2)
 }
 
-#Function to get and filter landsat images from selected paths
+#Function to get and filter srtm images from selected lat/long
 dem_srtm <- function(sp.layer, buff = 30) {
   if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
     stop("sp.layer isn't a SpatialPolygon* object")
@@ -256,6 +256,7 @@ dem_srtm <- function(sp.layer, buff = 30) {
   }
   msc.pnt <- rasterToPoints(msc, spatial = T)
   msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
+  names(msc.p) <- "elev"
   return(msc.p)
 }
 
