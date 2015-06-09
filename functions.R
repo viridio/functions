@@ -802,8 +802,8 @@ kmz_sv <- function(sp.layer, kmz.name){
 }
 
 # Import Veris data
-veris_import <- function(){
-  dat.fls <- list.files(path = "./Veris/", pattern = "VSECOM_.*\\.txt")
+veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR')){
+  dat.fls <- list.files(path = "./Veris/", pattern = paste0(vrs.fl, '.*\\.txt'))
   for (b in dat.fls) {
     veris.n <- read.table(paste0("Veris/", b), 
                           header = TRUE, 
@@ -823,16 +823,16 @@ veris_import <- function(){
   require(rgdal)
   veris.pnt <- SpatialPointsDataFrame(coords = veris[,c('Long','Lat')],
                                       proj4string = geo.str, 
-                                      data = veris[,c('EC30', 'EC90', 'Red', 'IR')])
+                                      data = veris[,vrbl])
   veris.pnt <- spTransform(veris.pnt, prj.str)
   veris.pnt <- remove.duplicates(veris.pnt)
   
-  rtk.poly <- readOGR("./rtk", sub(".shp", "", 
-                                   list.files("./rtk", pattern = ".shp$")))
-  if (summary(rtk.poly)$is.projected == F) {
-    rtk.poly <- spTransform(rtk.poly, prj.str)
+  elev.poly <- readOGR("./Elev", sub(".shp", "", 
+                                   list.files("./Elev", pattern = ".shp$")))
+  if (summary(elev.poly)$is.projected == F) {
+    elev.poly <- spTransform(elev.poly, prj.str)
   }
-  join <- over(veris.pnt, rtk.poly['elevM'])
+  join <- over(veris.pnt, elev.poly['elevM'])
   
   veris.pnt@data['elevM'] <- join[1]
   
@@ -842,7 +842,7 @@ veris_import <- function(){
 }
 
 
-var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
+var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(rgdal)
   require(rgeos)
   require(ggplot2)
@@ -874,7 +874,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
   LMs <- vector("list", 10)
   lm.summ <- data.frame('model' = numeric(10), 'min'= numeric(10), 'max' = numeric(10), 
                         'median' = numeric(10), 'mean' = numeric(10), 'r2' = numeric(10),
-                        'rmse' = numeric(10))
+                        'rmse' = numeric(10), 'slope' = numeric(10), 'AIC' = numeric(10))
   
   for(i in 1:length(lms)){
     assign("LM", get(lms[i]), envir = .GlobalEnv)
@@ -883,11 +883,10 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
     
     if (!summary(model)$adj.r.squared == "NaN"){
-      predicted <- predict(model)
-      actual <- cal.db[var]
-      data.lm <- cbind(predicted, actual)
-      names(data.lm) <- sub(var, "actual", names(data.lm))
-      
+      predicted <- as.vector(predict(model))
+      actual <- cal.db[,var]
+      cal.fit <- lm(predicted ~ actual)
+          
       # Prediction and interpolation on veris.shp
       pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
       lm.summ[i, 'model'] <- i
@@ -895,21 +894,24 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
       lm.summ[i, 'max'] <- max(pred.int)
       lm.summ[i, 'median'] <- median(pred.int)
       lm.summ[i, 'mean'] <- mean(pred.int)
-      lm.summ[i, 'r2'] <- summary(model)$adj.r.squared
-      lm.summ[i, 'rmse'] <- summary(model)$sigma
-    }
+      lm.summ[i, 'r2'] <- summary(cal.fit)$adj.r.squared
+      lm.summ[i, 'rmse'] <- summary(cal.fit)$sigma
+      lm.summ[i, 'slope'] <- summary(cal.fit)$coefficients[2]
+      lm.summ[i, 'AIC'] <- AIC(cal.fit)
+      }
   }
   
   write.csv(lm.summ, paste0('Veris/', var, '_lms_summary.csv'))
-  lm.summ <- subset(lm.summ, lm.summ$min > 0.5)
-  lm.summ <- subset(lm.summ, lm.summ$r2 > 0)
+  #lm.summ <- subset(lm.summ, lm.summ$min > 0.1)
+  #lm.summ <- subset(lm.summ, lm.summ$r2 > 0)
   
   # PDF write
+  if (pdf == T){
   pdf(paste0('Veris/', var, "_calibration.pdf"), 
       paper = "letter", width = 6, height = 0)
   
   for(i in 1:nrow(lm.summ)){
-    model <- LMs[[i]]
+    model <- LMs[[lm.summ$model[i]]]
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
     label <- paste('Model N°', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
@@ -929,7 +931,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
     cal <- cbind(join, soil@data)
     var.nm <- match(var, names(cal))
     names(cal)[var.nm] <- 'Lab'
-    cal.fit <- lm(Lab ~ Pred, data = cal)
+    cal.fit <- lm(Pred ~ Lab, data = cal)
     eqn <- paste("r2:", format(summary(cal.fit)$adj.r.squared, digits=2), "/", "RMSE:", 
                  format(summary(cal.fit)$sigma, digits=2))
     plot2 <- ggplot(data = cal, aes(Lab, Pred)) +
@@ -960,6 +962,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil'){
     grid.arrange(plot1, plot2, plot3, nrow=3)
   }
   dev.off()
+  }
   
   return(LMs)  
 }
@@ -1114,6 +1117,6 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
 }
 
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
-     cols, elev_cols, ec_cols, om_cols, presc_grid, hyb.param, hyb_pp, grd_m,
+     cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
      var_cal, trat_grd, multi_mz, file = "~/SIG/Geo_util/Functions.RData")
