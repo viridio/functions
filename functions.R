@@ -28,8 +28,8 @@ swi_cols <- colorRampPalette(c("#C2523C", "#EDA113", "#FFFF00", "#00DB00",
 # CEC color ramp
 cec_cols <- colorRampPalette(c("#BA1414", "#FFFFBF", "#369121"), space = "Lab")
 
+# Build landsat list of polygons for matching scenes
 lndst_01 <- readOGR("~/SIG/Geo_util/raster/arg/", "lndst_scn_g")
-
 for (a in names(lndst_01@data)) {
   lndst_01@data[, a] <- as.character(lndst_01@data[, a])
 }
@@ -55,6 +55,45 @@ scn_pr <- function(sp.layer) {
     if (gCovers(a, sp.layer)) {
       pth_rw_lst <- c(pth_rw_lst, paste0(sub("P", "", a@data["PATH"]),
                                          sub("R", "", a@data["ROW"])))
+    }
+  }
+  #Return vector of landsat path and rows
+  return(pth_rw_lst)
+}
+
+# Build SRTM list of polygons for matching scenes
+hgt.lst <- list.files("~/SIG/Geo_util/raster/arg/srtm_1s",
+                      ".hgt$", full.names = T)
+srtm.pol <- list()
+for (a in seq_along(hgt.lst)) {
+  r <- raster(hgt.lst[a])
+  proj4string(r) <- geo.str
+  e <- r@extent
+  m <- matrix(c(e[1], e[1], e[2], e[2],
+                e[3], e[4], e[4], e[3]),
+              ncol = 2)
+  b <- spPolygons(m, crs = proj4string(r),
+                  attr = data.frame(LL = sub(".hgt", "", basename(hgt.lst[a])),
+                                    stringsAsFactors = F))
+  srtm.pol[a] <- b
+  rm(a, r, e, m, b)
+}
+rm(hgt.lst)
+
+#Function to get SRTM scenes from spatial object
+srtm_pr <- function(sp.layer) {
+  require(sp)
+  # Check projection and change to WGS84
+  if (is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, geo.str)
+  }
+  require(rgeos)
+  pth_rw_lst <- character()
+  # For each polygon of srtm check which of them overlaps with the layer
+  for (a in srtm.pol) {
+    if (gIntersects(a, sp.layer)) {
+      pth_rw_lst <- c(pth_rw_lst, a@data[1, "LL"])
     }
   }
   #Return vector of landsat path and rows
@@ -166,6 +205,61 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   return(r.stk2)
 }
 
+#Function to get and filter srtm images from selected lat/long
+dem_srtm <- function(sp.layer, buff = 30) {
+  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+    stop("sp.layer isn't a SpatialPolygon* object")
+  }
+  require(sp)
+  require(rgdal)
+  require(rgeos)
+  require(raster)
+  if (buff != 0) {
+    # Check projection of layer and project to measure distances
+    if (is.projected(sp.layer) == F) {
+      sp.layer <- spTransform(sp.layer, prj.str)
+    }
+    # Assign ownership of holes to parent polygons
+    sp.comm <- createSPComment(sp.layer)
+    # Create buffer of polygon for border effect
+    sp.layer <- gBuffer(sp.comm, width = -buff)
+  }
+  if (is.projected(sp.layer)) {
+    # Reproject buffered layer to WGS84
+    sp.layer <- spTransform(sp.layer, geo.str)
+  }
+  # Get on which srtm polygon the layer intersects
+  r.pr <- srtm_pr(sp.layer)
+  # Load and mask each raster
+  for (b in seq_along(r.pr)) {
+    r <- raster(paste0("~/SIG/Geo_util/raster/arg/srtm_1s/", r.pr[b], ".hgt"))
+    proj4string(r) <- geo.str
+    crp <- crop(r, sp.layer)
+    msk <- mask(crp, sp.layer)
+    assign(paste0("rmsk", b), msk)
+    rm(b, r, crp, msk)
+  }
+  if (length(r.pr) > 1) {
+    # Build a first mosaic from the first two
+    msc <- mosaic(rmsk1, rmsk2, fun = mean)
+    # If there are more than two add htem to the mosaic
+    if (length(r.pr) > 2) {
+      # Get masks in the environment
+      r.lst <- grep("rmsk[0-9]", ls(), value = T)
+      # For each mask add it to the mosaic
+      for (c in 3:length(r.lst)) {
+        msc <- mosaic(msc, get(r.lst[c]), fun = mean)
+      }
+    }
+  } else {
+    msc <- rmsk1
+  }
+  msc.pnt <- rasterToPoints(msc, spatial = T)
+  msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
+  names(msc.p) <- "elev"
+  return(msc.p)
+}
+
 #Function to reclassify a raster in n classes by jenks
 rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
   if (class(raster.lyr) != "RasterLayer"){
@@ -190,9 +284,10 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 
 #Rsaga DEM Covariates
 dem_cov <- function(DEM.layer, dem.attr = "DEM") {
-  if (class(DEM.layer)[1] != "SpatialPointsDataFrame" |
-        class(DEM.layer) != "RasterLayer") {
-    stop("DEM.layer isn't a SpatialPointsDataFrame  or RasterLayer object")
+  if (class(DEM.layer)[1] != "SpatialPointsDataFrame") {
+    if (class(DEM.layer)[1] != "RasterLayer") {
+      stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
+    }
   }
   require(sp)
   require(RSAGA)
@@ -205,20 +300,22 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
   # Save current directory
   curr.wd <- getwd()
   setwd("./DEM_derivates")
+  base.lyr <- DEM.layer
   # Store dem layer CRS
-  lyr.crs <- CRS(proj4string(DEM.layer))
+  lyr.crs <- CRS(proj4string(base.lyr))
   # If layer is SPDF convert to raster
-  if (class(base.lyr)[1] != "SpatialPointsDataFrame") {
-    base.spix <- SpatialPixelsDataFrame(DEM.layer,
-                                        data = base.lyr@data[dem.attr],
-                                        proj4string = lyr.crs)
-    base.rstr <- raster(base.spix)
+  if (class(base.lyr)[1] == "SpatialPointsDataFrame") {
+    base.rstr <- pnt2rstr(base.lyr, dem.attr)
   } else {
-    base.rstr <- DEM.layer
+    base.rstr <- base.lyr
   }
   dem.file <- "dem.tif"
   # Save raster as GeoTIFF
   writeRaster(base.rstr, dem.file)
+  # Convert raster layer to points to add the layers
+  if (class(DEM.layer)[1] == "RasterLayer") {
+    base.lyr <- rasterToPoints(base.lyr, spatial = T)
+  }
   # Convert GeoTIFF to Saga Grid
   rsaga.import.gdal(dem.file, show.output.on.console = F)
   # Calculate Slope and Aspect
@@ -843,7 +940,6 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
   return(veris.pnt)
 }
 
-
 var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(rgdal)
   require(rgeos)
@@ -1118,7 +1214,22 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   return(sp.pol)
 }
 
+# Function to read shapefiles with proj info
+read_shp <- function(dsn, layer) {
+  require(rgdal)
+  require(maptools)
+  if (grep(".shp$", layer, ignore.case = T) == 1) {
+    layer.ogr <- sub(".shp", "", layer)
+  }
+  shp.info <- ogrInfo(dsn, layer.ogr)[["p4s"]]
+  shp.pth <- paste0(dsn, "/", layer)
+  shp.sp <- readShapeSpatial(fn = shp.pth, proj4string = CRS(shp.info),
+                             verbose = F, delete_null_obj = T)
+  return(shp.sp)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
-     var_cal, trat_grd, multi_mz, file = "~/SIG/Geo_util/Functions.RData")
+     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
+     file = "~/SIG/Geo_util/Functions.RData")
