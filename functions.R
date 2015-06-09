@@ -720,7 +720,9 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
   }
   require(spdep)
   # Remove NA's
-  sp.layer <- sp.layer[-which(is.na(sp.layer@data[,vrbl])),]
+  if (any(is.na(sp.layer@data[,vrbl]))) {
+    sp.layer <- sp.layer[-which(is.na(sp.layer@data[,vrbl])),]
+  }
   # Identify neighbours points by Euclidean distance
   nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
   # Get number of neighbours in the neighbours list
