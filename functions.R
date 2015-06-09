@@ -928,19 +928,27 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
   veris.pnt <- spTransform(veris.pnt, prj.str)
   veris.pnt <- remove.duplicates(veris.pnt)
   
-  elev.poly <- readOGR("./Elev", sub(".shp", "", 
-                                   list.files("./Elev", pattern = ".shp$")))
-  if (summary(elev.poly)$is.projected == F) {
-    elev.poly <- spTransform(elev.poly, prj.str)
-  }
-  join <- over(veris.pnt, elev.poly['elevM'])
-  
-  veris.pnt@data['elevM'] <- join[1]
-  
   writeOGR(veris.pnt, dsn = "./Veris", layer = "veris", 
-           driver = "ESRI Shapefile", overwrite_layer = T, )
+           driver = "ESRI Shapefile", overwrite_layer = T)
   return(veris.pnt)
 }
+
+elev_import <- function(path = 'Elev') {
+  require(rgeos)
+  elev <- read_shp(path, list.files(path, pattern = '.shp$'))
+  if (inherits(elev, "SpatialPolygonsDataFrame")) {
+    elev.cnt <- gCentroid(elev, byid = T)
+    elev.df <- over(elev.cnt, elev)
+    elev <- SpatialPointsDataFrame(coords = elev.cnt, data = elev.df,
+                                   proj4string = CRS(proj4string(elev)))
+  }
+  
+  if (summary(elev)$is.projected == F) {
+    elev <- spTransform(elev, prj.str)
+  }
+  return(elev)
+}
+  
 
 var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(rgdal)
@@ -1232,6 +1240,6 @@ read_shp <- function(dsn, layer) {
 
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
-     mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
+     mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
      file = "~/SIG/Geo_util/Functions.RData")
