@@ -622,6 +622,8 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
+  # Remove NA's
+  sp.layer <- sp.layer[-which(is.na(sp.layer@data[,vrbl])),]
   # Identify neighbours points by Euclidean distance
   nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
   # Get number of neighbours in the neighbours list
