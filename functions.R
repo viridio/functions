@@ -1209,8 +1209,22 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   return(sp.pol)
 }
 
+# Function to read shapefiles with proj info
+read_shp <- function(dsn, layer) {
+  require(rgdal)
+  require(maptools)
+  if (grep(".shp$", layer, ignore.case = T) == 1) {
+    layer.ogr <- sub(".shp", "", layer)
+  }
+  shp.info <- ogrInfo(dsn, layer.ogr)[["p4s"]]
+  shp.pth <- paste0(dsn, "/", layer)
+  shp.sp <- readShapeSpatial(fn = shp.pth, proj4string = CRS(shp.info),
+                             verbose = F, delete_null_obj = T)
+  return(shp.sp)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import,
-     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm,
+     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
      file = "~/SIG/Geo_util/Functions.RData")
