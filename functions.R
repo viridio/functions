@@ -192,11 +192,15 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
       vi.max <- max(df1[df1$Year == d, "VI"])
       df2 <- rbind.data.frame(df2, df1[df1$VI == vi.max,])
     }
+    df2 <- df2[order(df2$Year),]
     for (e in df2$SCN) {
       r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
     }
   } else {
-    r.stk2 <- r.stk
+    df1 <- df1[order(df1$Year),]
+    for (e in df1$SCN) {
+      r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
+    }
   }
   # Project stack
   r.stk2 <- projectRaster(r.stk2, crs = prj.str, method = "bilinear")
