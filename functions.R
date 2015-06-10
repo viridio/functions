@@ -1225,15 +1225,25 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
 }
 
 # Function to read shapefiles with proj info
-read_shp <- function(dsn, layer) {
+read_shp <- function(shp.file) {
   require(rgdal)
   require(maptools)
-  if (grep(".shp$", layer, ignore.case = T) == 1) {
-    layer.ogr <- sub(".shp", "", layer)
+  if (dirname(shp.file) == ".") {
+    dsn <- "."
+    fl.nm <- shp.file
+  } else {
+    dsn <- dirname(shp.file)
+    fl.nm <- basename(shp.file)
+  }
+  if (length(grep(".shp$", fl.nm, ignore.case = T)) == 1) {
+    layer.ogr <- sub(".shp", "", fl.nm)
+    fl.nm2 <- shp.file
+  } else {
+    layer.ogr <- fl.nm
+    fl.nm2 <- paste0(shp.file, ".shp")
   }
   shp.info <- ogrInfo(dsn, layer.ogr)[["p4s"]]
-  shp.pth <- paste0(dsn, "/", layer)
-  shp.sp <- readShapeSpatial(fn = shp.pth, proj4string = CRS(shp.info),
+  shp.sp <- readShapeSpatial(fn = fl.nm2, proj4string = CRS(shp.info),
                              verbose = F, delete_null_obj = T)
   return(shp.sp)
 }
