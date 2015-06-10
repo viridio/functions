@@ -1238,8 +1238,26 @@ read_shp <- function(dsn, layer) {
   return(shp.sp)
 }
 
+# Read kmz/kml into Spatial*DataFrame
+read_kmz <- function(kmz.file) {
+  require(tools)
+  require(rgdal)
+  tmp.dir <- tempdir()
+  if (file_ext(kmz.file) == "kmz") {
+    unzip(kmz.file, exdir = tmp.dir)
+  } else {
+    file.copy(kmz.file, tmp.dir)
+  }
+  wrk.fl <- list.files(tmp.dir, ".kml$", full.names = T)
+  lyr <- ogrListLayers(wrk.fl)
+  sp.lyr <- readOGR(wrk.fl, layer = lyr, verbose = F,
+                    stringsAsFactors = F)
+  file.remove(wrk.fl)
+  return(sp.lyr)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
-     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
+     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz,
      file = "~/SIG/Geo_util/Functions.RData")
