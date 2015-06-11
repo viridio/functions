@@ -192,11 +192,15 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
       vi.max <- max(df1[df1$Year == d, "VI"])
       df2 <- rbind.data.frame(df2, df1[df1$VI == vi.max,])
     }
+    df2 <- df2[order(df2$Year),]
     for (e in df2$SCN) {
       r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
     }
   } else {
-    r.stk2 <- r.stk
+    df1 <- df1[order(df1$Year),]
+    for (e in df1$SCN) {
+      r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
+    }
   }
   # Project stack
   r.stk2 <- projectRaster(r.stk2, crs = prj.str, method = "bilinear")
@@ -1232,21 +1236,53 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
 }
 
 # Function to read shapefiles with proj info
-read_shp <- function(dsn, layer) {
+read_shp <- function(shp.file) {
   require(rgdal)
   require(maptools)
-  if (grep(".shp$", layer, ignore.case = T) == 1) {
-    layer.ogr <- sub(".shp", "", layer)
+  if (dirname(shp.file) == ".") {
+    dsn <- "."
+    fl.nm <- shp.file
+  } else {
+    dsn <- dirname(shp.file)
+    fl.nm <- basename(shp.file)
+  }
+  if (length(grep(".shp$", fl.nm, ignore.case = T)) == 1) {
+    layer.ogr <- sub(".shp", "", fl.nm)
+    fl.nm2 <- shp.file
+  } else {
+    layer.ogr <- fl.nm
+    fl.nm2 <- paste0(shp.file, ".shp")
   }
   shp.info <- ogrInfo(dsn, layer.ogr)[["p4s"]]
-  shp.pth <- paste0(dsn, "/", layer)
-  shp.sp <- readShapeSpatial(fn = shp.pth, proj4string = CRS(shp.info),
+  shp.sp <- readShapeSpatial(fn = fl.nm2, proj4string = CRS(shp.info),
                              verbose = F, delete_null_obj = T)
   return(shp.sp)
+}
+
+# Read kmz/kml into Spatial*DataFrame
+read_kmz <- function(kmz.file) {
+  require(tools)
+  require(rgdal)
+  tmp.dir <- tempdir()
+  if (file_ext(kmz.file) == "kmz") {
+    unzip(kmz.file, exdir = tmp.dir)
+  } else {
+    file.copy(kmz.file, tmp.dir)
+  }
+  wrk.fl <- list.files(tmp.dir, ".kml$", full.names = T)
+  lyr <- ogrListLayers(wrk.fl)
+  sp.lyr <- readOGR(wrk.fl, layer = lyr, verbose = F,
+                    stringsAsFactors = F)
+  file.remove(wrk.fl)
+  return(sp.lyr)
 }
 
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
+<<<<<<< HEAD
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
+=======
+     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz,
+>>>>>>> bcc37ea8b16a56fc58b62587ab910a569d982478
      file = "~/SIG/Geo_util/Functions.RData")
