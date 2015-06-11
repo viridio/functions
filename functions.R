@@ -855,6 +855,9 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   } else {
     vrbl.fit <- fit.res
   }
+  fit.res <- fit.variogram(vrbl.vgm, vgm(isill, sh.mod, irange, inug), 
+                           fit.sills = T, fit.ranges = T, warn.if.neg = T)
+  vrbl.fit <- fit.res
   # Wether to plot the variograms (exp & fit)
   if (plot) {
     print(
@@ -904,22 +907,19 @@ kmz_sv <- function(sp.layer, kmz.name){
 
 # Import Veris data
 veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR')){
-  dat.fls <- list.files(path = "./Veris/", pattern = paste0(vrs.fl, '.*\\.txt'))
-  for (b in dat.fls) {
-    veris.n <- read.table(paste0("Veris/", b), 
-                          header = TRUE, 
-                          sep = "\t", 
-                          skipNul = T)
+  fls <- list.files(path = "./Veris/", pattern = paste0(vrs.fl, '.*\\.txt'))
+  for (b in fls) {
+    veris.n <- read.table(paste0("Veris/", b), header = TRUE, sep = "\t", skipNul = T)
     if (exists("veris")) {
       veris <- rbind(veris, veris.n)
     } else {
       veris <- veris.n
     }
   }
-  ec30.nm <- grep("EC_SH|EC.SH|EC30", names(veris), ignore.case = T, value = T)
-  ec90.nm <- grep("EC_DP|EC.DP|EC90", names(veris), ignore.case = T, value = T)
-  names(veris) <- sub(ec30.nm, "EC30", names(veris))
-  names(veris) <- sub(ec90.nm, "EC90", names(veris))
+  ec30.nm <- grep("EC_SH|EC.SH|EC30|EC SH", names(veris), ignore.case = T, value = T)
+  ec90.nm <- grep("EC_DP|EC.DP|EC90|EC DP", names(veris), ignore.case = T, value = T)
+  if (length(ec30.nm) == 1) { names(veris) <- sub(ec30.nm, "EC30", names(veris)) }
+  if (length(ec90.nm) == 1) { names(veris) <- sub(ec90.nm, "EC90", names(veris)) }
   require(sp)
   require(rgdal)
   veris.pnt <- SpatialPointsDataFrame(coords = veris[,c('Long','Lat')],
@@ -927,9 +927,7 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
                                       data = veris[,vrbl])
   veris.pnt <- spTransform(veris.pnt, prj.str)
   veris.pnt <- remove.duplicates(veris.pnt)
-  
-  writeOGR(veris.pnt, dsn = "./Veris", layer = "veris", 
-           driver = "ESRI Shapefile", overwrite_layer = T)
+  rm(veris, veris.n)
   return(veris.pnt)
 }
 
@@ -948,8 +946,18 @@ elev_import <- function(path = 'Elev') {
   }
   return(elev)
 }
-  
 
+soil_import <- function(path = 'Soil') {
+  soil.df <- read.table(paste0(path, '/', list.files(path, pattern = '.txt$')),
+                     header = TRUE, sep = "\t", skipNul = T)
+  sp.soil <- SpatialPointsDataFrame(coords = soil.df[,c('Long', 'Lat')], 
+                                 data = soil.df, proj4string = geo.str)
+  sp.soil <- spTransform(sp.soil, CRSobj = prj.str)
+  writeOGR(sp.soil, overwrite_layer = T, dsn = "./Soil", driver = "ESRI Shapefile",
+           layer = "soil")
+  return(sp.soil)
+}
+  
 var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(rgdal)
   require(rgeos)
@@ -957,8 +965,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(reshape2)
   require(gridExtra)
   
-  soil <- readOGR("./Soil", soil.layer)
-  # soil <- readOGR("./Soil", "soil")
+  soil <- read_shp('./Soil', soil)
   if (summary(soil)$is.projected == F) {
     soil <- spTransform(soil, prj.str)
   }
@@ -1029,7 +1036,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
       geom_raster(data = sp.layer@data, aes(x, y, fill = Pred)) +
       coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'Pred', title = label) +
       scale_fill_gradientn(colours = cols(255)) + theme_bw() + 
-      geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
+      geom_point(data = data.frame(soil@coords), aes(x = Long, y = Lat), shape = 19, size = 2) +
       theme(plot.title = element_text(size = 14, face = 'bold'),
             axis.text = element_text(size = 10),
             axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1241,5 +1248,5 @@ read_shp <- function(dsn, layer) {
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
-     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
+     soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
      file = "~/SIG/Geo_util/Functions.RData")
