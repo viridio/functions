@@ -1280,9 +1280,7 @@ read_kmz <- function(kmz.file) {
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
-<<<<<<< HEAD
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
-=======
      var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz,
 >>>>>>> bcc37ea8b16a56fc58b62587ab910a569d982478
      file = "~/SIG/Geo_util/Functions.RData")
