@@ -624,7 +624,8 @@ mz_smth <- function(sp.layer, area = 2500) {
     require(raster)
     # If the input is a raster convert to polygons and dissolve by zone
     if (class(sp.layer) == "RasterLayer") {
-      sp.layer <- rasterToPolygons(sp.layer, dissolve = T, na.rm = T)
+      sp.layer <- polygonizeR(sp.layer)
+      crs(sp.layer) <- prj.str
     }
     # If in WGS84 project to UTM
     if (is.projected(sp.layer) == F) {
@@ -969,10 +970,8 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(reshape2)
   require(gridExtra)
   
-  soil <- read_shp('./Soil', soil)
-  if (summary(soil)$is.projected == F) {
-    soil <- spTransform(soil, prj.str)
-  }
+  soil <- read_shp('./Soil', 'soil.shp')
+  crs(soil) <- prj.str
   soil <- soil[soil@data[,var]>0,]
   # Create buffer of 10 m
   soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
@@ -1040,7 +1039,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
       geom_raster(data = sp.layer@data, aes(x, y, fill = Pred)) +
       coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'Pred', title = label) +
       scale_fill_gradientn(colours = cols(255)) + theme_bw() + 
-      geom_point(data = data.frame(soil@coords), aes(x = Long, y = Lat), shape = 19, size = 2) +
+      geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
       theme(plot.title = element_text(size = 14, face = 'bold'),
             axis.text = element_text(size = 10),
             axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1277,10 +1276,44 @@ read_kmz <- function(kmz.file) {
   return(sp.lyr)
 }
 
+## Define the function
+polygonizeR <- function(x, outshape=NULL, gdalformat = 'ESRI Shapefile', 
+                             pypath=NULL, readpoly=TRUE, quiet=TRUE) {
+  if (isTRUE(readpoly)) require(rgdal)
+  if (is.null(pypath)) {
+    pypath <- Sys.which('gdal_polygonize.py')
+  }
+  if (!file.exists(pypath)) stop("Can't find gdal_polygonize.py on your system.") 
+  owd <- getwd()
+  on.exit(setwd(owd))
+  setwd(dirname(pypath))
+  if (!is.null(outshape)) {
+    outshape <- sub('\\.shp$', '', outshape)
+    f.exists <- file.exists(paste(outshape, c('shp', 'shx', 'dbf'), sep='.'))
+    if (any(f.exists)) 
+      stop(sprintf('File already exists: %s', 
+                   toString(paste(outshape, c('shp', 'shx', 'dbf'), 
+                                  sep='.')[f.exists])), call.=FALSE)
+  } else outshape <- tempfile()
+  if (is(x, 'Raster')) {
+    require(raster)
+    writeRaster(x, {f <- tempfile(fileext='.asc')})
+    rastpath <- normalizePath(f)
+  } else if (is.character(x)) {
+    rastpath <- normalizePath(x)
+  } else stop('x must be a file path (character string), or a Raster object.')
+  system2('python', args=(sprintf('"%1$s" "%2$s" -f "%3$s" "%4$s.shp"', 
+                                  pypath, rastpath, gdalformat, outshape)))
+  if (isTRUE(readpoly)) {
+    shp <- readOGR(dirname(outshape), layer = basename(outshape), verbose=!quiet)
+    return(shp) 
+  }
+  return(NULL)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
-     cols, elev_cols, ec_cols, om_cols, swi_cols, presc_grid, hyb.param, hyb_pp, grd_m,
+     cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
-     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz,
->>>>>>> bcc37ea8b16a56fc58b62587ab910a569d982478
+     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, polygonizeR,
      file = "~/SIG/Geo_util/Functions.RData")
