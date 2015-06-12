@@ -623,7 +623,7 @@ mz_smth <- function(sp.layer, area = 2500) {
   require(raster)
   # If the input is a raster convert to polygons and dissolve by zone
   if (inherits(sp.layer, "RasterLayer")) {
-    sp.layer <- rasterToPolygons(sp.layer, dissolve = T)
+    sp.layer <- rstr2pol(sp.layer)
     # crs(sp.layer) <- prj.str
   }
   # If in WGS84 project to UTM
@@ -637,7 +637,7 @@ mz_smth <- function(sp.layer, area = 2500) {
               override = TRUE)
   }
   # Convert multipart to singlepart
-  sp.layer <- disaggregate(sp.layer)
+  #sp.layer <- disaggregate(sp.layer)
   zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
   # Convert name 'layer' to 'Zone'
   names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
