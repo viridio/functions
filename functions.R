@@ -1286,20 +1286,28 @@ read_kmz <- function(kmz.file) {
 # Function to convert raster to polygons
 rstr2pol <- function(raster) {
   require(rgdal)
-  if (!inherits(sp.layer, "RasterLayer")) {
+  require(RSAGA)
+  if (!inherits(raster, "RasterLayer")) {
     stop("sp.layer isn't a RasterLayer object")
   }
-  pypath <- Sys.which('gdal_polygonize.py')
-  if (!file.exists(pypath)) stop("Can't find gdal_polygonize.py on your system.") 
-  curr.wd <- getwd()
-  on.exit(setwd(curr.wd))
-  setwd(dirname(pypath))
-  outshape <- tempfile()
-  writeRaster(x, {f <- tempfile(fileext='.asc')})
-  rastpath <- normalizePath(f)
-  system2('python', args=(sprintf('"%1$s" "%2$s" -f "%3$s" "%4$s.shp"', 
-                                  pypath, rastpath, "ESRI Shapefile", outshape)))
-  sp.pol <- read_shp(outshape)
+  # Create temporary files
+  tmp.rstr <- tempfile(fileext = ".tif")
+  writeRaster(raster, tmp.rstr)
+  tmp.sgrd <- tempfile(fileext = ".sgrd")
+  tmp.shp <- tempfile(fileext = ".shp")
+  # Convert tif to sgrd for SAGA
+  rsaga.import.gdal(tmp.rstr, tmp.sgrd, show.output.on.console = F)
+  # Convert grid to polygons
+  rsaga.geoprocessor("shapes_grid", module = 6,
+                     param = list(GRID = tmp.sgrd,
+                                  POLYGONS = tmp.shp,
+                                  SPLIT = 1),
+                     show.output.on.console = F)
+  # Read the generated shapefile
+  sp.pol <- read_shp(tmp.shp)
+  # Leave in the data frame only only zone information
+  sp.pol@data <- data.frame(layer = as.numeric(sp.pol$NAME),
+                            stringsAsFactors = F)
   return(sp.pol)
 }
 
