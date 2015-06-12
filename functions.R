@@ -103,7 +103,7 @@ srtm_pr <- function(sp.layer) {
 #Function to get and filter landsat images from selected paths
 mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
                       st.year = 1990, vi.thr = 1500, cv.lim = 15) {
-  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+  if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
   require(sp)
@@ -112,6 +112,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   require(raster)
   # Save current directory to return later
   curr.wd <- getwd()
+  on.exit(setwd(curr.wd))
   # Set current directory to the one that has the VI images
   setwd(paste0("~/SIG/Geo_util/raster/arg/" , vindx, "_Landsat/"))
   # Create a list of available images 
@@ -204,14 +205,12 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   }
   # Project stack
   r.stk2 <- projectRaster(r.stk2, crs = prj.str, method = "bilinear")
-  # Return to original working directory
-  setwd(curr.wd)
   return(r.stk2)
 }
 
 #Function to get and filter srtm images from selected lat/long
 dem_srtm <- function(sp.layer, buff = 30) {
-  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+  if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
   require(sp)
@@ -266,7 +265,7 @@ dem_srtm <- function(sp.layer, buff = 30) {
 
 #Function to reclassify a raster in n classes by jenks
 rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
-  if (class(raster.lyr) != "RasterLayer"){
+  if (!inherits(raster.lyr, "RasterLayer")){
     stop("Input object isn't a RasterLayer object")
   }
   if (n.class != length(val)) {
@@ -288,10 +287,9 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 
 #Rsaga DEM Covariates
 dem_cov <- function(DEM.layer, dem.attr = "DEM") {
-  if (class(DEM.layer)[1] != "SpatialPointsDataFrame") {
-    if (class(DEM.layer)[1] != "RasterLayer") {
-      stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
-    }
+  if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
+      !inherits(DEM.layer, "RasterLayer")) {
+    stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
   }
   require(sp)
   require(RSAGA)
@@ -303,12 +301,13 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
   dir.create("DEM_derivates")
   # Save current directory
   curr.wd <- getwd()
+  on.exit(setwd(curr.wd))
   setwd("./DEM_derivates")
   base.lyr <- DEM.layer
   # Store dem layer CRS
   lyr.crs <- CRS(proj4string(base.lyr))
   # If layer is SPDF convert to raster
-  if (class(base.lyr)[1] == "SpatialPointsDataFrame") {
+  if (inherits(base.lyr, "SpatialPointsDataFrame")) {
     base.rstr <- pnt2rstr(base.lyr, dem.attr)
   } else {
     base.rstr <- base.lyr
@@ -317,7 +316,7 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
   # Save raster as GeoTIFF
   writeRaster(base.rstr, dem.file)
   # Convert raster layer to points to add the layers
-  if (class(DEM.layer)[1] == "RasterLayer") {
+  if (inherits(base.lyr, "RasterLayer")) {
     base.lyr <- rasterToPoints(base.lyr, spatial = T)
   }
   # Convert GeoTIFF to Saga Grid
@@ -388,14 +387,13 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
     require(DMwR)
     base.lyr@data <- knnImputation(base.lyr@data)
   }
-  setwd(curr.wd)
   return(base.lyr)
 }
 
 # Defining the MBA interpolation function
 int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, krig = F) {
-  if (substr(class(base.pnts), 1, 13)[1] != "SpatialPoints" |
-        class(obs.pnts)[1] != "SpatialPointsDataFrame") {
+  if (!inherits(base.pnts, "SpatialPoints") |
+      !inherits(obs.pnts, "SpatialPointsDataFrame")) {
     stop("at least one of the inputs isn't a SpatialPoints* object")
   }
   require(sp)
@@ -531,7 +529,7 @@ hyb_pp <- function(hybrid, exp.yld, step = 1235) {
 
 presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
                        fill = F, quantile = NULL, step = 1235) {
-  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(sp)
@@ -592,7 +590,7 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
 }
 
 grd_m <- function(sp.layer, dist = 10) {
-  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+  if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygons* object")
   }
   # If in WGS84 project to UTM
@@ -618,56 +616,54 @@ grd_m <- function(sp.layer, dist = 10) {
 }
 
 mz_smth <- function(sp.layer, area = 2500) {
-  if (substr(class(sp.layer), 1, 15)[1] == "SpatialPolygons" |
-        class(sp.layer)[1] == "RasterLayer") {
-    require(rgrass7)
-    require(raster)
-    # If the input is a raster convert to polygons and dissolve by zone
-    if (class(sp.layer) == "RasterLayer") {
-      sp.layer <- polygonizeR(sp.layer)
-      crs(sp.layer) <- prj.str
-    }
-    # If in WGS84 project to UTM
-    if (is.projected(sp.layer) == F) {
-      library(rgdal)
-      sp.layer <- spTransform(sp.layer, prj.str)
-    }
-    # Check wether GRASS is running, else initialize
-    if (nchar(Sys.getenv("GISRC")) == 0) {
-      initGRASS(gisBase = "c:/Program Files (x86)/GRASS GIS 7.0.0",
-                override = TRUE)
-    }
-    # Convert multipart to singlepart
-    sp.layer <- disaggregate(sp.layer)
-    zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-    # Convert name 'layer' to 'Zone'
-    names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
-    # Write GRASS vector
-    writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
-    zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-    # Smooth lines of polygons
-    execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
-              output = zm.gnrl, method = "snakes", threshold = 1)
-    zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-    # Remove small/sliver polygons
-    execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.gnrl,
-              output = zm.cln, tool = "rmarea", threshold = area)
-    # Read back cleaned layer
-    zm.fnl <- readVECT(zm.cln)
-    # If no CRS, define one
-    if (is.na(zm.fnl@proj4string)) {
-      proj4string(zm.fnl) <- prj.str
-    }
-    # Remove 'cat' column from data.frame
-    zm.fnl@data["cat"] <- NULL
-    return(zm.fnl)
-  } else {
+  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "RasterLayer")) {
     stop("sp.layer isn't a SpatialPolygons* or RasterLayer object")
   }
+  require(rgrass7)
+  require(raster)
+  # If the input is a raster convert to polygons and dissolve by zone
+  if (inherits(sp.layer, "RasterLayer")) {
+    sp.layer <- rasterToPolygons(sp.layer, dissolve = T)
+    # crs(sp.layer) <- prj.str
+  }
+  # If in WGS84 project to UTM
+  if (is.projected(sp.layer) == F) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.str)
+  }
+  # Check wether GRASS is running, else initialize
+  if (nchar(Sys.getenv("GISRC")) == 0) {
+    initGRASS(gisBase = "c:/Program Files (x86)/GRASS GIS 7.0.0",
+              override = TRUE)
+  }
+  # Convert multipart to singlepart
+  sp.layer <- disaggregate(sp.layer)
+  zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+  # Convert name 'layer' to 'Zone'
+  names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
+  # Write GRASS vector
+  writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
+  zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+  # Smooth lines of polygons
+  execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
+            output = zm.gnrl, method = "snakes", threshold = 1)
+  zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+  # Remove small/sliver polygons
+  execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.gnrl,
+            output = zm.cln, tool = "rmarea", threshold = area)
+  # Read back cleaned layer
+  zm.fnl <- readVECT(zm.cln)
+  # If no CRS, define one
+  if (is.na(zm.fnl@proj4string)) {
+    proj4string(zm.fnl) <- prj.str
+  }
+  # Remove 'cat' column from data.frame
+  zm.fnl@data["cat"] <- NULL
+  return(zm.fnl)
 }
 
 pnt2rstr <- function(sp.layer, field = names(sp.layer)){
-  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame")
   }
   require(sp)
@@ -704,7 +700,7 @@ pnt2rstr <- function(sp.layer, field = names(sp.layer)){
 }
 
 geo_centroid <- function(sp.layer){
-  if (substr(class(sp.layer), 1, 7)[1] != "Spatial") {
+  if (!inherits(sp.layer, "Spatial")) {
     stop("sp.layer isn't a Spatial* object")
   }
   # If in UTM project to WGS84
@@ -720,7 +716,7 @@ geo_centroid <- function(sp.layer){
 }
 
 moran_cln <- function(sp.layer, vrbl, dist = 20) {
-  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
@@ -768,7 +764,7 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
 }
 
 var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
-  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(automap)
@@ -946,7 +942,7 @@ elev_import <- function(path = 'Elev') {
                                    proj4string = CRS(proj4string(elev)))
   }
   
-  if (summary(elev)$is.projected == F) {
+  if (is.projected(elev) == F) {
     elev <- spTransform(elev, prj.str)
   }
   return(elev)
@@ -1090,7 +1086,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   require(rgeos)
   require(maptools)
   # Check if sp.layer is a spatialpolygon
-  if (substr(class(sp.layer), 1, 15)[1] != "SpatialPolygons") {
+  if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygons* object")
   }
   # Assignment of field boundary
@@ -1186,7 +1182,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
                                          "SWI", "EC30", "EC90", "OM",
                                          "CEC", "EVI_mean"),
                      n.mz = 3, dist = 20, plot = F) {
-  if (class(sp.layer)[1] != "SpatialPointsDataFrame") {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   library(ade4)
@@ -1238,6 +1234,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
 read_shp <- function(shp.file) {
   require(rgdal)
   require(maptools)
+  # Get path and file name from object
   if (dirname(shp.file) == ".") {
     dsn <- "."
     fl.nm <- shp.file
@@ -1245,6 +1242,7 @@ read_shp <- function(shp.file) {
     dsn <- dirname(shp.file)
     fl.nm <- basename(shp.file)
   }
+  # Check if it has extension  for the two functions
   if (length(grep(".shp$", fl.nm, ignore.case = T)) == 1) {
     layer.ogr <- sub(".shp", "", fl.nm)
     fl.nm2 <- shp.file
@@ -1252,7 +1250,9 @@ read_shp <- function(shp.file) {
     layer.ogr <- fl.nm
     fl.nm2 <- paste0(shp.file, ".shp")
   }
+  # Get projection information from layer
   shp.info <- ogrInfo(dsn, layer.ogr)[["p4s"]]
+  # Load the shapefile with the defined parameters
   shp.sp <- readShapeSpatial(fn = fl.nm2, proj4string = CRS(shp.info),
                              verbose = F, delete_null_obj = T)
   return(shp.sp)
@@ -1262,58 +1262,50 @@ read_shp <- function(shp.file) {
 read_kmz <- function(kmz.file) {
   require(tools)
   require(rgdal)
+  # Define temporary directory
   tmp.dir <- tempdir()
+  # Check if it is kmz or kml
   if (file_ext(kmz.file) == "kmz") {
+    # If a kmz, extract it
     unzip(kmz.file, exdir = tmp.dir)
   } else {
     file.copy(kmz.file, tmp.dir)
   }
+  # Get kml working file
   wrk.fl <- list.files(tmp.dir, ".kml$", full.names = T)
+  # Get name/s of layer/s in KML
   lyr <- ogrListLayers(wrk.fl)
+  # Read the layer/s in the KML into a Spatial*DataFrame
   sp.lyr <- readOGR(wrk.fl, layer = lyr, verbose = F,
                     stringsAsFactors = F)
+  # Delete de KML
   file.remove(wrk.fl)
   return(sp.lyr)
 }
 
-## Define the function
-polygonizeR <- function(x, outshape=NULL, gdalformat = 'ESRI Shapefile', 
-                             pypath=NULL, readpoly=TRUE, quiet=TRUE) {
-  if (isTRUE(readpoly)) require(rgdal)
-  if (is.null(pypath)) {
-    pypath <- Sys.which('gdal_polygonize.py')
+# Function to convert raster to polygons
+rstr2pol <- function(raster) {
+  require(rgdal)
+  if (!inherits(sp.layer, "RasterLayer")) {
+    stop("sp.layer isn't a RasterLayer object")
   }
+  pypath <- Sys.which('gdal_polygonize.py')
   if (!file.exists(pypath)) stop("Can't find gdal_polygonize.py on your system.") 
-  owd <- getwd()
-  on.exit(setwd(owd))
+  curr.wd <- getwd()
+  on.exit(setwd(curr.wd))
   setwd(dirname(pypath))
-  if (!is.null(outshape)) {
-    outshape <- sub('\\.shp$', '', outshape)
-    f.exists <- file.exists(paste(outshape, c('shp', 'shx', 'dbf'), sep='.'))
-    if (any(f.exists)) 
-      stop(sprintf('File already exists: %s', 
-                   toString(paste(outshape, c('shp', 'shx', 'dbf'), 
-                                  sep='.')[f.exists])), call.=FALSE)
-  } else outshape <- tempfile()
-  if (is(x, 'Raster')) {
-    require(raster)
-    writeRaster(x, {f <- tempfile(fileext='.asc')})
-    rastpath <- normalizePath(f)
-  } else if (is.character(x)) {
-    rastpath <- normalizePath(x)
-  } else stop('x must be a file path (character string), or a Raster object.')
+  outshape <- tempfile()
+  writeRaster(x, {f <- tempfile(fileext='.asc')})
+  rastpath <- normalizePath(f)
   system2('python', args=(sprintf('"%1$s" "%2$s" -f "%3$s" "%4$s.shp"', 
-                                  pypath, rastpath, gdalformat, outshape)))
-  if (isTRUE(readpoly)) {
-    shp <- readOGR(dirname(outshape), layer = basename(outshape), verbose=!quiet)
-    return(shp) 
-  }
-  return(NULL)
+                                  pypath, rastpath, "ESRI Shapefile", outshape)))
+  sp.pol <- read_shp(outshape)
+  return(sp.pol)
 }
 
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
-     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, polygonizeR,
+     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, rstr2pol,
      file = "~/SIG/Geo_util/Functions.RData")
