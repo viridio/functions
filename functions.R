@@ -938,7 +938,7 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
 
 elev_import <- function(path = 'Elev') {
   require(rgeos)
-  elev <- read_shp(path, list.files(path, pattern = '.shp$'))
+  elev <- read_shp(list.files(path, pattern = '.shp$'))
   if (inherits(elev, "SpatialPolygonsDataFrame")) {
     elev.cnt <- gCentroid(elev, byid = T)
     elev.df <- over(elev.cnt, elev)
@@ -1276,7 +1276,7 @@ read_kmz <- function(kmz.file) {
   return(sp.lyr)
 }
 
-## Define the function
+## Create polygons from raster
 polygonizeR <- function(x, outshape=NULL, gdalformat = 'ESRI Shapefile', 
                              pypath=NULL, readpoly=TRUE, quiet=TRUE) {
   if (isTRUE(readpoly)) require(rgdal)
