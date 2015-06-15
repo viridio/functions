@@ -1309,7 +1309,6 @@ rstr2pol <- function(raster) {
   sp.pol@data <- data.frame(layer = as.numeric(sp.pol$NAME),
                             stringsAsFactors = F)
   return(sp.pol)
->>>>>>> e8147febb21d09aa1ad2dd9a770a3cffde5615f3
 }
 
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
