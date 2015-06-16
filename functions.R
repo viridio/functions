@@ -934,7 +934,7 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
 
 elev_import <- function(path = 'Elev') {
   require(rgeos)
-  elev <- read_shp(list.files(path, pattern = '.shp$'))
+  elev <- read_shp(paste0(path, '/', list.files(path, pattern = '.shp$')))
   if (inherits(elev, "SpatialPolygonsDataFrame")) {
     elev.cnt <- gCentroid(elev, byid = T)
     elev.df <- over(elev.cnt, elev)
@@ -966,7 +966,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(reshape2)
   require(gridExtra)
   
-  soil <- read_shp('./Soil', 'soil.shp')
+  soil <- read_shp('Soil/soil.shp')
   crs(soil) <- prj.str
   soil <- soil[soil@data[,var]>0,]
   # Create buffer of 10 m
