@@ -1049,7 +1049,7 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T){
   for(i in 1:nrow(lm.summ)){
     model <- LMs[[lm.summ$model[i]]]
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
-    label <- paste('Model N°', lm.summ$model[i], ": ", var, 
+    label <- paste('Model N?', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
     pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
     sp.layer@data['Pred'] <- pred.int
@@ -1143,6 +1143,13 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   }
   mat.trt <- t(mat.trt)
   trt.v <- as.vector(mat.trt)
+  # Creation of column identifiers
+  col.mat <- mat
+  for (i in 1:ncol(mat)) {
+    col.mat[, i] <- i
+  }
+  col.t <- t(col.mat)
+  col.v <- as.vector(col.t)
   # Creation of the vector of replications
   rep.ordr <- vector()
   for (f in 1:ceiling(nc / ntrat)) {
@@ -1170,7 +1177,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
     pol.lst[a] <- slot(pol.1[a,]@polygons[[1]], "ID") 
   }
   # Creation of the data frame of the polygons
-  data <- data.frame(Trat = trt.v, Rep = rep.v)
+  data <- data.frame(Col = col.v, Trat = trt.v, Rep = rep.v)
   row.names(data) <- unlist(pol.lst)
   # Adding the data frame to the polygons
   pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
@@ -1195,7 +1202,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Extraction of the data frame rows that match with the clipped polygons
   df <- over(pol.4, pol.3.pnt)
   # Final spatialpolygondf with attribute table
-  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = pol.3@data[df,], match.ID = F)
+  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = df, match.ID = F)
   gc()
   return(pol.5)
 }
