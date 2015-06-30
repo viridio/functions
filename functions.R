@@ -29,7 +29,7 @@ swi_cols <- colorRampPalette(c("#C2523C", "#EDA113", "#FFFF00", "#00DB00",
 cec_cols <- colorRampPalette(c("#BA1414", "#FFFFBF", "#369121"), space = "Lab")
 
 # Build landsat list of polygons for matching scenes
-lndst_01 <- readOGR("~/SIG/Geo_util/raster/arg/", "lndst_scn_g")
+lndst_01 <- read_shp("~/SIG/Geo_util/raster/arg/lndst_scn_g")
 for (a in names(lndst_01@data)) {
   lndst_01@data[, a] <- as.character(lndst_01@data[, a])
 }
@@ -209,7 +209,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
 }
 
 #Function to get and filter srtm images from selected lat/long
-dem_srtm <- function(sp.layer, buff = 30) {
+dem_srtm <- function(sp.layer, buff = 30, format = 'point') {
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
@@ -257,10 +257,14 @@ dem_srtm <- function(sp.layer, buff = 30) {
   } else {
     msc <- rmsk1
   }
-  msc.pnt <- rasterToPoints(msc, spatial = T)
-  msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
-  names(msc.p) <- "elev"
-  return(msc.p)
+  if (format != 'raster'){
+    msc.pnt <- rasterToPoints(msc, spatial = T)
+    msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
+    names(msc.p) <- "elev"
+    return(msc.p)
+  } else {
+    return(msc)
+  }
 }
 
 #Function to reclassify a raster in n classes by jenks
@@ -871,32 +875,51 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   return(list(lmbd, vrbl.vgm, vrbl.fit))
 }
 
-kmz_sv <- function(sp.layer, kmz.name){
+kmz_sv <- function(sp.layer, spz = spz){
   require(plotKML)
-  raster_layer <- pnt2rstr(sp.layer, c('DEM', 'Pred_OM', 'EC30', 'EC90'))
+  kmz.name <- paste0(basename(getwd()), '_Reporte_TDEC')
+  rstr_lyr <- pnt2rstr(sp.layer, c('DEM', 'SWI', 'EC30', 'EC90', 'OM', 'CEC'))
+  spz@data$Zone[spz@data$Zone == 1] <- '1. Alta'
+  spz@data$Zone[spz@data$Zone == 2] <- '2. Media'
+  spz@data$Zone[spz@data$Zone == 3] <- '3. Baja'
   kml_open(file.name = paste0(kmz.name, '.kml'),
            folder.name = kmz.name, 
            overwrite = T)
-  kml_layer(raster_layer, 
+  kml_layer(spz, raster.name = 'Calidad de Sitio',
+            subfolder.name='Calidad de Sitio (s/u)',
+            colour = Zone,
+            colour_scale = rev(cols(255)),
+            outline = F)
+  kml_layer(rstr_lyr, 
             raster.name = 'DEM',
             subfolder.name='DEM (m)',
             colour = 'DEM',
             colour_scale = elev_cols(255))
-  kml_layer(raster_layer, 
-            raster.name = 'MO',
-            subfolder.name='MO (%)',
-            colour = 'Pred_OM',
-            colour_scale = om_cols(255))
-  kml_layer(raster_layer, 
+  kml_layer(rstr_lyr, 
+            raster.name = 'Indice de Humedad',
+            subfolder.name='IH (s/u)',
+            colour = 'SWI',
+            colour_scale = swi_cols(255))
+  kml_layer(rstr_lyr, 
             raster.name = 'EC30',
-            subfolder.name='ECa 0-30 cm',
+            subfolder.name='ECa Superficial (mS/m)',
             colour = 'EC30',
             colour_scale = ec_cols(255))
-  kml_layer(raster_layer, 
+  kml_layer(rstr_lyr, 
             raster.name = 'EC90',
-            subfolder.name='ECa 0-90 cm',
+            subfolder.name='ECa Profunda (mS/m)',
             colour = 'EC90',
             colour_scale = ec_cols(255))
+  kml_layer(rstr_lyr, 
+            raster.name = 'MO',
+            subfolder.name='MO (%)',
+            colour = 'OM',
+            colour_scale = om_cols(255))
+  kml_layer(rstr_lyr, 
+            raster.name = 'CIC',
+            subfolder.name='CIC (meq/100g)',
+            colour = 'CEC',
+            colour_scale = cec_cols(255))
   
   kml_close(file.name = paste0(kmz.name, '.kml'))
   
@@ -959,7 +982,7 @@ soil_import <- function(path = 'Soil') {
   return(sp.soil)
 }
   
-var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
+var_cal <- function(sp.layer, var = 'OM', pdf = T){
   require(rgdal)
   require(rgeos)
   require(ggplot2)
@@ -967,8 +990,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   require(gridExtra)
   
   soil <- read_shp('Soil/soil.shp')
-  crs(soil) <- prj.str
-  soil <- soil[soil@data[,var]>0,]
+  proj4string(soil) <- proj4string(sp.layer)
   # Create buffer of 10 m
   soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
   join <- over(soil.buf, sp.layer, fn = mean)
@@ -1027,7 +1049,7 @@ var_cal <- function(sp.layer, var = 'OM', soil.layer = 'soil', pdf = T){
   for(i in 1:nrow(lm.summ)){
     model <- LMs[[lm.summ$model[i]]]
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
-    label <- paste('Model NÂ°', lm.summ$model[i], ": ", var, 
+    label <- paste('Model N°', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
     pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
     sp.layer@data['Pred'] <- pred.int
@@ -1311,9 +1333,342 @@ rstr2pol <- function(raster) {
   return(sp.pol)
 }
 
+# Report creation
+report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){ 
+  
+  require(rgdal)
+  require(rgeos)
+  require(ggplot2)
+  require(gridExtra)
+  require(ggmap)
+  require(png)
+  require(RGraphics)
+  require(jpeg)
+  require(maptools)
+  require(plyr)
+  require(tools)
+  
+  {
+  load(file = "~/SIG/Geo_util/Functions.RData")
+  # Load boundary
+  # bound <- read_shp('Boundaries/boundaries')
+  bound <- spTransform(bound, geo.str)
+  data <- fortify(bound)
+  # Load Veris data
+  # veris <- read_shp('interp_db_5m')
+  # Create Multi-Spati zones
+  # spz <- multi_mz(sp.layer = veris, plot = T, n.mz = 3, dist = 20, 
+  #                 vrbls = c('EC30', 'EC90', 'DEM', 'SWI', 'OM', 'CEC'))
+  spz@data$id = rownames(spz@data)
+  zn.nm <- grep("Zone|DN", names(spz), ignore.case = T, value = T)
+  names(spz) <- sub(zn.nm, "Zone", names(spz))
+  attr <- as.data.frame(spz)
+  spz.df <- ldply(spz@polygons,fortify)
+  spz.df <- cbind(spz.df,attr[as.character(spz.df$id),])
+  # Add lat long coordinates to veris@data data frame
+  veris <- spTransform(veris, geo.str)
+  veris$lat <- veris@coords[,2]
+  veris$long <- veris@coords[,1]
+  veris <- spTransform(veris, prj.str)
+  # Load soil data
+  soil <- read_shp('Soil/soil')
+  soil <- spTransform(soil, prj.str)
+  soil$lat <- soil@coords[,2]
+  soil$long <- soil@coords[,1]
+  soil@data$Muestra <- 1:dim(soil@data)[1]
+  # Soil samples data
+  #vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
+  vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
+  col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (meq/100g)', 
+              'Na (meq/100g)', 'Zn (ppm)', 'CIC (meq/100g)')
+  var.nm <- match(vrbl.sl, names(soil@data))
+  soil.tbl <- tableGrob(format(soil@data[var.nm], digits = 3, scientific = F, big.mark = ","), 
+                        cols = col.nm, core.just = "center", col.just = 'center', 
+                        gpar.coretext = gpar(fontsize = 11), 
+                        gpar.coltext = gpar(fontsize = 10, fontface = 'bold'), 
+                        show.rownames = F, h.even.alpha = 0,
+                        gpar.rowtext = gpar(col = "black", cex = 0.7, equal.width = TRUE,
+                                            show.vlines = TRUE, show.hlines = TRUE, separator = "grey"))
+  }
+  #grid.draw(soil.tbl) 
+  # Text
+  txt1 <- "Reporte de Caracterizacion Ambiental"
+  t1 <- textGrob(txt1, gp = gpar(fontsize = 20, fontface = 'bold'), just = 'center')
+  Prod <- basename(dirname(getwd()))
+  Lote <- basename(getwd())
+  txt2 <-gsub('_', ' - ', gsub('-', ' ', Lote))
+  t2 <- textGrob(txt2, gp = gpar(fontsize = 16, fontface = 'italic'), just = 'center')
+  # Logos
+  {
+  lg1 <- readJPEG("C:/AGG/utils/monsanto/td_logo.jpg")
+  lg2 <- readPNG("C:/AGG/utils/monsanto/logo.png")
+  df <- data.frame(x=sample(1:64, 1000, replace=T), y=sample(1:64, 1000, replace=T))
+  l1 <- ggplot(df, aes(x,y)) + 
+    annotation_custom(rasterGrob(lg1), -Inf, Inf, -Inf, Inf) + theme_minimal() +
+    theme(axis.text = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid.major = element_line(colour = NA),
+          panel.grid.minor = element_line(colour = NA),
+          plot.margin = unit(c(1, 5, 1, 0), 'lines'))
+  l2 <- ggplot(df, aes(x,y)) + 
+    annotation_custom(rasterGrob(lg2), 
+                      -Inf, Inf, -Inf, Inf) + theme_minimal() +
+    theme(axis.text = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid.major = element_line(colour = NA),
+          panel.grid.minor = element_line(colour = NA),
+          plot.margin = unit(c(1, 0, 1, 5), 'lines'))
+  l3 <- ggplot(df, aes(x,y)) + 
+    annotation_custom(rasterGrob(lg1), 
+                      -Inf, Inf, -Inf, Inf) + theme_minimal() +
+    theme(axis.text = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid.major = element_line(colour = NA),
+          panel.grid.minor = element_line(colour = NA))
+  l4 <- ggplot(df, aes(x,y)) + 
+    annotation_custom(rasterGrob(lg2), 
+                      -Inf, Inf, -Inf, Inf) + theme_minimal() +
+    theme(axis.text = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          panel.grid.major = element_line(colour = NA),
+          panel.grid.minor = element_line(colour = NA))
+  # Blank plot
+  blankPlot <- ggplot()+geom_blank(aes(1,1))+
+    theme(plot.background = element_blank(), 
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(), 
+          panel.border = element_blank(),
+          panel.background = element_blank(),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.text.x = element_blank(), 
+          axis.text.y = element_blank(),
+          axis.ticks = element_blank())
+  # Create GE figure
+  gmap <- get_map(location = bound@polygons[[1]]@labpt, maptype = "satellite", zoom) 
+  gm1 <- ggmap(gmap) +
+    geom_polygon(data = data, aes(x = long, y = lat, group = group),
+                 colour = 'white', fill = 'black', alpha = .3, size = .5) +
+    scale_x_continuous(limits = c(bound@bbox[1,1], bound@bbox[1,2]), expand = c(0.001, 0.001)) +
+    scale_y_continuous(limits = c(bound@bbox[2,1], bound@bbox[2,2]), expand = c(0.001, 0.001)) +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+  # Create plots (DEM, SWI, EC30, EC90, MO, CIC, Zones)
+  p1 <- ggplot() +
+    geom_raster(data = veris@data, aes(x, y, fill = DEM)) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'DEM', title = 'Altimetria') +
+    scale_fill_gradientn(colours = elev_cols(255), name = 'Altura (m)') + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          legend.key.height = unit(0.3, units = 'cm'),
+          legend.key.width = unit(1, units = 'cm')) +
+    guides(fill=guide_colourbar(title.position = 'top', title.hjust = 0.5)) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  p2 <- ggplot() +
+    geom_raster(data = veris@data, aes(x, y, fill = SWI)) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'SWI', title = 'Indice de Humedad') +
+    scale_fill_gradientn(colours = swi_cols(255), name = 'IH (s/u)') + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          legend.key.height = unit(0.3, units = 'cm'),
+          legend.key.width = unit(1, units = 'cm')) +
+    guides(fill=guide_colourbar(title.position = 'top', title.hjust = 0.5)) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  p3 <- ggplot() +
+    geom_raster(data = veris@data, aes(x, y, fill = EC30)) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'EC30', title = 'EC Superficial') +
+    scale_fill_gradientn(colours = ec_cols(255), name = 'ECs (mS/m)') + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          legend.key.height = unit(0.3, units = 'cm'),
+          legend.key.width = unit(1, units = 'cm')) +
+    guides(fill=guide_colourbar(title.position = 'top', title.hjust = 0.5)) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  p4 <- ggplot() +
+    geom_raster(data = veris@data, aes(x, y, fill = EC90)) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'EC90', title = 'EC Profunda') +
+    scale_fill_gradientn(colours = ec_cols(255), name = 'ECp (mS/m)') + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          legend.key.height = unit(0.3, units = 'cm'),
+          legend.key.width = unit(1, units = 'cm')) +
+    guides(fill=guide_colourbar(title.position = 'top', title.hjust = 0.5)) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  p5 <- ggplot() +
+    geom_raster(data = veris@data, aes(x, y, fill = OM)) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'OM', title = 'Materia Organica') +
+    scale_fill_gradientn(colours = om_cols(255), name = 'MO (%)') + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          legend.key.height = unit(0.3, units = 'cm'),
+          legend.key.width = unit(1, units = 'cm')) +
+    guides(fill=guide_colourbar(title.position = 'top', title.hjust = 0.5)) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  p6 <- ggplot() +
+    geom_raster(data = veris@data, aes(x, y, fill = CEC)) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', fill = 'CEC', title = 'CIC') +
+    scale_fill_gradientn(colours = cec_cols(255), name = 'CIC (meq/100g)') + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          legend.position = 'bottom',
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank(),
+          legend.key.height = unit(0.3, units = 'cm'),
+          legend.key.width = unit(1, units = 'cm')) +
+    guides(fill=guide_colourbar(title.position = 'top', title.hjust = 0.5)) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  p7 <- ggplot() +
+    geom_polygon(data = spz.df, aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+    geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
+    geom_text(data = soil@data, aes(x = long, y = lat, label = soil@data$Muestra), hjust = 1, vjust = 1) +
+    coord_equal() + labs(x = 'Longitud', y = 'Latitud', title = 'Calidad de Sitio', fill = '') +
+    scale_fill_gradientn(colours = rev(cols(3)), breaks = c(1,2,3), guide = guide_legend(), 
+                         labels = c("Alta", rep("", max(spz@data$Zone)-2), "Baja")) + theme_bw() + 
+    theme(plot.title = element_text(size = 16, face = 'bold'),
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
+          axis.ticks = element_blank()) +
+    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
+                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
+    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
+                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  # Create histogram plots (DEM, SWI, EC30, EC90, MO, CIC, Zones)
+  h1 <- ggplot(veris@data, aes(x = DEM, y = ..density..)) + 
+    geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
+    geom_density() +
+    theme_bw() +
+    labs(x = "Altura (m)") +
+    theme(axis.text = element_text(size = 10),
+          axis.title.x = element_text(size = 12, face = 'bold'),
+          axis.title.y = element_text(size = 12, face = 'bold'))
+  h2 <- ggplot(veris@data, aes(x = SWI, y = ..density..)) + 
+    geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
+    geom_density() +
+    theme_bw() +
+    labs(x = "Indice de Humedad") +
+    theme(axis.text = element_text(size = 10),
+          axis.title.x = element_text(size = 12, face = 'bold'),
+          axis.title.y = element_text(size = 12, face = 'bold'))
+  h3 <- ggplot(veris@data, aes(x = EC30, y = ..density..)) + 
+    geom_histogram(binwidth = 0.5, fill="cornsilk", colour="grey60", size=.2) +
+    geom_density() +
+    theme_bw() +
+    labs(x = "ECs (mS/m)") +
+    theme(axis.text = element_text(size = 10),
+          axis.title.x = element_text(size = 12, face = 'bold'),
+          axis.title.y = element_text(size = 12, face = 'bold'))
+  h4 <- ggplot(veris@data, aes(x = EC90, y = ..density..)) + 
+    geom_histogram(binwidth = 0.5, fill="cornsilk", colour="grey60", size=.2) +
+    geom_density() +
+    theme_bw() +
+    labs(x = "ECp (mS/m)") +
+    theme(axis.text = element_text(size = 10),
+          axis.title.x = element_text(size = 12, face = 'bold'),
+          axis.title.y = element_text(size = 12, face = 'bold'))
+  h5 <- ggplot(veris@data, aes(x = OM, y = ..density..)) + 
+    geom_histogram(binwidth = 0.05, fill="cornsilk", colour="grey60", size=.2) +
+    geom_density() +
+    theme_bw() +
+    labs(x = "MO (%)") +
+    theme(axis.text = element_text(size = 10),
+          axis.title.x = element_text(size = 12, face = 'bold'),
+          axis.title.y = element_text(size = 12, face = 'bold'))
+  h6 <- ggplot(veris@data, aes(x = CEC, y = ..density..)) + 
+    geom_histogram(binwidth = 0.2, fill="cornsilk", colour="grey60", size=.2) +
+    geom_density() +
+    theme_bw() +
+    labs(x = "CIC (meq/100g)") +
+    theme(axis.text = element_text(size = 10),
+          axis.title.x = element_text(size = 12, face = 'bold'),
+          axis.title.y = element_text(size = 12, face = 'bold'))
+  }
+  # PDF creation
+  {
+  pdf(paste0(Lote, '_Reporte_TDEC.pdf'), paper = "letter", height = 0, width = 0)
+  grid.arrange(arrangeGrob(l3, ncol=1),
+               arrangeGrob(textGrob(txt2, gp = gpar(fontsize = 26, fontface = 'bold'),
+                                    just = 'center'), ncol = 1),
+               arrangeGrob(textGrob(txt1, gp = gpar(fontsize = 18, fontface = 'bold'),
+                                    just = 'center'), ncol = 1),
+               arrangeGrob(gm1, ncol=1),
+               arrangeGrob(l4, ncol=1),
+               nrow = 5, heights = c(1/10, 1/10, 1.5/10, 5.5/10, 1/10))
+  grid.arrange(arrangeGrob(l1, blankPlot, l2, ncol=3),
+               arrangeGrob(t1, ncol = 1),
+               arrangeGrob(t2, ncol=1),
+               arrangeGrob(p1, p2, ncol=2),
+               arrangeGrob(h1, h2, ncol = 2),
+               arrangeGrob(textGrob('Pagina 1', gp = gpar(fontsize = 10), just = 'center'), ncol = 1),
+               nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5/10, 2.5/10, 0.5/10))
+  grid.arrange(arrangeGrob(l1, blankPlot, l2, ncol=3),
+               arrangeGrob(t1, ncol = 1),
+               arrangeGrob(t2, ncol=1),
+               arrangeGrob(p3, p4, ncol=2),
+               arrangeGrob(h3, h4, ncol = 2),
+               arrangeGrob(textGrob('Pagina 2', gp = gpar(fontsize = 10), just = 'center'), ncol = 1),
+               nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5/10, 2.5/10, 0.5/10))
+  grid.arrange(arrangeGrob(l1, blankPlot, l2, ncol=3),
+               arrangeGrob(t1, ncol = 1),
+               arrangeGrob(t2, ncol=1),
+               arrangeGrob(p5, p6, ncol=2),
+               arrangeGrob(h5, h6, ncol = 2),
+               arrangeGrob(textGrob('Pagina 3', gp = gpar(fontsize = 10), just = 'center'), ncol = 1),
+               nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5/10, 2.5/10, 0.5/10))
+  grid.arrange(arrangeGrob(l1, blankPlot, l2, ncol=3),
+               arrangeGrob(t1, ncol = 1),
+               arrangeGrob(t2, ncol=1),
+               arrangeGrob(p7, ncol=1),
+               arrangeGrob(soil.tbl, ncol = 1),
+               arrangeGrob(textGrob('Pagina 4', gp = gpar(fontsize = 10), just = 'center'), ncol = 1),
+               nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5.5/10, 2/10, 0.5/10))
+  dev.off()
+  }
+  
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
-     soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp,
-     var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, rstr2pol,
-     file = "~/SIG/Geo_util/Functions.RData")
+     soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
+     rstr2pol, report_tdec, file = "~/SIG/Geo_util/Functions.RData")
