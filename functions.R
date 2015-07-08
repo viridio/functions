@@ -686,7 +686,7 @@ pnt2rstr <- function(sp.layer, field = names(sp.layer)){
       if (a %in% names(sp.layer@data) == F) {
         stop("field isn't an attribute in SpatialPointsDataFrame")
       }
-      sp.spix <- SpatialPixelsDataFrame(sp.layer,
+      sp.spix <- SpatialPixelsDataFrame(sp.layer, 
                                         data = sp.layer@data[a],
                                         proj4string = lyr.crs)
       sp.rstr <- stack(sp.rstr, raster(sp.spix))
@@ -879,13 +879,26 @@ kmz_sv <- function(sp.layer, spz = spz){
   require(plotKML)
   kmz.name <- paste0(basename(getwd()), '_Reporte_TDEC')
   rstr_lyr <- pnt2rstr(sp.layer, c('DEM', 'SWI', 'EC30', 'EC90', 'OM', 'CEC'))
+  for (pol in seq_along(spz@polygons)) {
+    if (length(spz@polygons[[pol]]@plotOrder) > 1) {
+      pol1 <- spz@polygons[[1]]
+      row1 <- spz@data[1,]
+      spz@data[1, 1] <- spz@data[pol, 1]
+      spz@data[1, 2] <- spz@data[pol, 2]
+      spz@data[pol, 1] <- row1[1, 1]
+      spz@data[pol, 2] <- row1[1, 2]
+      spz@polygons[[1]] <- spz@polygons[[pol]]
+      spz@polygons[[pol]] <- pol1
+    }
+  }
   spz@data$Zone[spz@data$Zone == 1] <- '1. Alta'
   spz@data$Zone[spz@data$Zone == 2] <- '2. Media'
   spz@data$Zone[spz@data$Zone == 3] <- '3. Baja'
   kml_open(file.name = paste0(kmz.name, '.kml'),
            folder.name = kmz.name, 
            overwrite = T)
-  kml_layer(spz, raster.name = 'Calidad de Sitio',
+  kml_layer(spz, 
+            raster.name = 'Calidad de Sitio',
             subfolder.name='Calidad de Sitio (s/u)',
             colour = Zone,
             colour_scale = rev(cols(255)),
@@ -894,7 +907,8 @@ kmz_sv <- function(sp.layer, spz = spz){
             raster.name = 'DEM',
             subfolder.name='DEM (m)',
             colour = 'DEM',
-            colour_scale = elev_cols(255))
+            colour_scale = elev_cols(255),
+            plot.legend = T)
   kml_layer(rstr_lyr, 
             raster.name = 'Indice de Humedad',
             subfolder.name='IH (s/u)',
@@ -1202,7 +1216,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Extraction of the data frame rows that match with the clipped polygons
   df <- over(pol.4, pol.3.pnt)
   # Final spatialpolygondf with attribute table
-  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = df, match.ID = F)
+  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = pol.3@data[df,], match.ID = F)
   gc()
   return(pol.5)
 }
@@ -1253,6 +1267,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   row.names(cs1) <- NULL
   # Clusterization of the first component in the selected number of clusters
   pca.rast <- rstr_rcls(pnt2rstr(sp.pca, "CS1"), n.class = n.mz, val = 1:n.mz)
+  print(plot(pca.rast, col = rev(cols(3)))
   # Smoothing and cleaning of the managemnent zones
   sp.pol <- mz_smth(pca.rast)
   print(cs1)
@@ -1342,7 +1357,6 @@ rstr2pol <- function(raster) {
 
 # Report creation
 report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){ 
-  
   require(rgdal)
   require(rgeos)
   require(ggplot2)
@@ -1354,9 +1368,6 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
   require(maptools)
   require(plyr)
   require(tools)
-  
-  {
-  load(file = "~/SIG/Geo_util/Functions.RData")
   # Load boundary
   # bound <- read_shp('Boundaries/boundaries')
   bound <- spTransform(bound, geo.str)
@@ -1366,11 +1377,9 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
   # Create Multi-Spati zones
   # spz <- multi_mz(sp.layer = veris, plot = T, n.mz = 3, dist = 20, 
   #                 vrbls = c('EC30', 'EC90', 'DEM', 'SWI', 'OM', 'CEC'))
-  spz@data$id = rownames(spz@data)
-  zn.nm <- grep("Zone|DN", names(spz), ignore.case = T, value = T)
-  names(spz) <- sub(zn.nm, "Zone", names(spz))
+  spz@data$id <- rownames(spz@data)
   attr <- as.data.frame(spz)
-  spz.df <- ldply(spz@polygons,fortify)
+  spz.df <- ldply(spz@polygons, fortify)
   spz.df <- cbind(spz.df,attr[as.character(spz.df$id),])
   # Add lat long coordinates to veris@data data frame
   veris <- spTransform(veris, geo.str)
@@ -1396,7 +1405,6 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
                         show.rownames = F, h.even.alpha = 0,
                         gpar.rowtext = gpar(col = "black", cex = 0.7, equal.width = TRUE,
                                             show.vlines = TRUE, show.hlines = TRUE, separator = "grey"))
-  }
   #grid.draw(soil.tbl) 
   # Text
   txt1 <- "Reporte de Caracterizacion Ambiental"
@@ -1406,7 +1414,6 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
   txt2 <-gsub('_', ' - ', gsub('-', ' ', Lote))
   t2 <- textGrob(txt2, gp = gpar(fontsize = 16, fontface = 'italic'), just = 'center')
   # Logos
-  {
   lg1 <- readJPEG("C:/AGG/utils/monsanto/td_logo.jpg")
   lg2 <- readPNG("C:/AGG/utils/monsanto/logo.png")
   df <- data.frame(x=sample(1:64, 1000, replace=T), y=sample(1:64, 1000, replace=T))
@@ -1566,7 +1573,10 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
     scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
                        labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
   p7 <- ggplot() +
-    geom_polygon(data = spz.df, aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+    geom_polygon(data = spz.df[spz.df$id %in% spz.df[spz.df$hole,]$id,], 
+                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+    geom_polygon(data = spz.df[!spz.df$id %in% spz.df[spz.df$hole,]$id,], 
+                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
     geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
     geom_text(data = soil@data, aes(x = long, y = lat, label = soil@data$Muestra), hjust = 1, vjust = 1) +
     coord_equal() + labs(x = 'Longitud', y = 'Latitud', title = 'Calidad de Sitio', fill = '') +
@@ -1629,9 +1639,7 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
     theme(axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
-  }
   # PDF creation
-  {
   pdf(paste0(Lote, '_Reporte_TDEC.pdf'), paper = "letter", height = 0, width = 0)
   grid.arrange(arrangeGrob(l3, ncol=1),
                arrangeGrob(textGrob(txt2, gp = gpar(fontsize = 26, fontface = 'bold'),
@@ -1670,8 +1678,6 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
                arrangeGrob(textGrob('Pagina 4', gp = gpar(fontsize = 10), just = 'center'), ncol = 1),
                nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5.5/10, 2/10, 0.5/10))
   dev.off()
-  }
-  
 }
 
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
