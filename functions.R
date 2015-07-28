@@ -111,12 +111,14 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   require(rgeos)
   require(raster)
   # Save current directory to return later
-  curr.wd <- getwd()
-  on.exit(setwd(curr.wd))
+  #   curr.wd <- getwd()
+  #   on.exit(setwd(curr.wd))
   # Set current directory to the one that has the VI images
-  setwd(paste0("~/SIG/Geo_util/raster/arg/" , vindx, "_Landsat/"))
+  # setwd(paste0("~/SIG/Geo_util/raster/arg/" , vindx, "_Landsat/"))
   # Create a list of available images 
-  img.lst <- list.files(".", ".tif$")
+  img.lst <- list.files(paste0("~/SIG/Geo_util/raster/arg/",
+                               vindx, "_Landsat/"),
+                        ".tif$", full.names = T)
   # Check projection of layer and project to measure distances
   if (is.projected(sp.layer) == F) {
     sp.layer <- spTransform(sp.layer, prj.str)
@@ -648,7 +650,7 @@ mz_smth <- function(sp.layer, area = 2500) {
   # Write GRASS vector
   writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
   zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-#   # Smooth lines of polygons
+  # Smooth lines of polygons
 #   execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
 #             output = zm.gnrl, method = "snakes", threshold = 1)
 #   zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
@@ -1603,7 +1605,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1615,7 +1617,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1627,7 +1629,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1639,7 +1641,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1651,7 +1653,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
+    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1663,7 +1665,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
