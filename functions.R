@@ -648,15 +648,15 @@ mz_smth <- function(sp.layer, area = 2500) {
   # Write GRASS vector
   writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
   zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-  # Smooth lines of polygons
-  execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
-            output = zm.gnrl, method = "snakes", threshold = 1)
-  zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+#   # Smooth lines of polygons
+#   execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
+#             output = zm.gnrl, method = "snakes", threshold = 1)
+#   zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
   # Remove small/sliver polygons
-  execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.gnrl,
-            output = zm.cln, tool = "rmarea", threshold = area)
+  execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.pol,
+            output = zm.gnrl, tool = "rmarea", threshold = area)
   # Read back cleaned layer
-  zm.fnl <- readVECT(zm.cln)
+  zm.fnl <- readVECT(zm.gnrl)
   # If no CRS, define one
   if (is.na(zm.fnl@proj4string)) {
     proj4string(zm.fnl) <- prj.str
@@ -875,22 +875,22 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   return(list(lmbd, vrbl.vgm, vrbl.fit))
 }
 
-kmz_sv <- function(sp.layer, spz = spz){
+kmz_sv <- function(sp.layer = interp.rp, spz = spz){
   require(plotKML)
-  kmz.name <- paste0(basename(getwd()), '_Reporte_TDEC')
+  kmz.name <- paste0(basename(getwd()), '_Reporte_TDCA')
   rstr_lyr <- pnt2rstr(sp.layer, c('DEM', 'SWI', 'EC30', 'EC90', 'OM', 'CEC'))
-  for (pol in seq_along(spz@polygons)) {
-    if (length(spz@polygons[[pol]]@plotOrder) > 1) {
-      pol1 <- spz@polygons[[1]]
-      row1 <- spz@data[1,]
-      spz@data[1, 1] <- spz@data[pol, 1]
-      spz@data[1, 2] <- spz@data[pol, 2]
-      spz@data[pol, 1] <- row1[1, 1]
-      spz@data[pol, 2] <- row1[1, 2]
-      spz@polygons[[1]] <- spz@polygons[[pol]]
-      spz@polygons[[pol]] <- pol1
-    }
-  }
+#   for (pol in seq_along(spz@polygons)) {
+#     if (length(spz@polygons[[pol]]@plotOrder) > 1) {
+#       pol1 <- spz@polygons[[1]]
+#       row1 <- spz@data[1,]
+#       spz@data[1, 1] <- spz@data[pol, 1]
+#       spz@data[1, 2] <- spz@data[pol, 2]
+#       spz@data[pol, 1] <- row1[1, 1]
+#       spz@data[pol, 2] <- row1[1, 2]
+#       spz@polygons[[1]] <- spz@polygons[[pol]]
+#       spz@polygons[[pol]] <- pol1
+#     }
+#   }
   spz@data$Zone[spz@data$Zone == 1] <- '1. Alta'
   spz@data$Zone[spz@data$Zone == 2] <- '2. Media'
   spz@data$Zone[spz@data$Zone == 3] <- '3. Baja'
@@ -996,17 +996,17 @@ soil_import <- function(path = 'Soil') {
   return(sp.soil)
 }
   
-var_cal <- function(sp.layer, var = 'OM', pdf = T){
+var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   require(rgdal)
   require(rgeos)
   require(ggplot2)
   require(reshape2)
   require(gridExtra)
   
-  soil <- read_shp('Soil/soil.shp')
+  soil <- read_shp(paste0('Soil/', soil, '.shp'))
   proj4string(soil) <- proj4string(sp.layer)
   # Create buffer of 10 m
-  soil.buf <- gBuffer(soil, byid = TRUE, width = 10)
+  soil.buf <- gBuffer(soil, byid = TRUE, width = width)
   join <- over(soil.buf, sp.layer, fn = mean)
   cal.db <- cbind(join, soil@data)
   
@@ -1224,7 +1224,8 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
 multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
                                          "SWI", "EC30", "EC90", "OM",
                                          "CEC", "EVI_mean"),
-                     n.mz = 3, dist = 20, plot = F) {
+                     n.mz = 3, dist = 20, plot = F, sp.layer2 = bound.shp, 
+                     area = 3000) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
@@ -1266,10 +1267,11 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   cs1 <- cs1[order(-abs(cs1[, 2])),]
   row.names(cs1) <- NULL
   # Clusterization of the first component in the selected number of clusters
-  pca.rast <- rstr_rcls(pnt2rstr(sp.pca, "CS1"), n.class = n.mz, val = 1:n.mz)
-  print(plot(pca.rast, col = rev(cols(3)))
-  # Smoothing and cleaning of the managemnent zones
-  sp.pol <- mz_smth(pca.rast)
+  rast <- disaggregate(pnt2rstr(sp.pca, "CS1"), fact = 5, method = 'bilinear')
+  pca.rast <- rstr_rcls(rast, n.class = n.mz, val = 1:n.mz, style = 'quantile')
+  pca.rast <- mask(pca.rast, sp.layer2)
+  # Cleaning of the managemnent zones
+  sp.pol <- mz_smth(pca.rast, area)
   print(cs1)
   return(sp.pol)
 }
@@ -1356,7 +1358,7 @@ rstr2pol <- function(raster) {
 }
 
 # Report creation
-report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){ 
+report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 16){ 
   require(rgdal)
   require(rgeos)
   require(ggplot2)
@@ -1370,7 +1372,7 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
   require(tools)
   # Load boundary
   # bound <- read_shp('Boundaries/boundaries')
-  bound <- spTransform(bound, geo.str)
+  bound <- spTransform(bound.shp, geo.str)
   data <- fortify(bound)
   # Load Veris data
   # veris <- read_shp('interp_db_5m')
@@ -1393,10 +1395,12 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
   soil$long <- soil@coords[,1]
   soil@data$Muestra <- 1:dim(soil@data)[1]
   # Soil samples data
-  #vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
-  vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
+  vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
+  #vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (meq/100g)', 
               'Na (meq/100g)', 'Zn (ppm)', 'CIC (meq/100g)')
+#   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (ppm)', 
+#               'Na (ppm)', 'Zn (ppm)', 'CIC (meq/100g)')
   var.nm <- match(vrbl.sl, names(soil@data))
   soil.tbl <- tableGrob(format(soil@data[var.nm], digits = 3, scientific = F, big.mark = ","), 
                         cols = col.nm, core.just = "center", col.just = 'center', 
@@ -1573,10 +1577,11 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
     scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
                        labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
   p7 <- ggplot() +
-    geom_polygon(data = spz.df[spz.df$id %in% spz.df[spz.df$hole,]$id,], 
-                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
-    geom_polygon(data = spz.df[!spz.df$id %in% spz.df[spz.df$hole,]$id,], 
-                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+    geom_polygon(data = spz.df, aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+#     geom_polygon(data = spz.df[spz.df$id %in% spz.df[spz.df$hole,]$id,], 
+#                  aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+#     geom_polygon(data = spz.df[!spz.df$id %in% spz.df[spz.df$hole,]$id,], 
+#                  aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
     geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
     geom_text(data = soil@data, aes(x = long, y = lat, label = soil@data$Muestra), hjust = 1, vjust = 1) +
     coord_equal() + labs(x = 'Longitud', y = 'Latitud', title = 'Calidad de Sitio', fill = '') +
@@ -1591,56 +1596,80 @@ report_tdec <- function(bound = bound, veris = interp.rp, spz = spz, zoom = 16){
     scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
                        labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
   # Create histogram plots (DEM, SWI, EC30, EC90, MO, CIC, Zones)
-  h1 <- ggplot(veris@data, aes(x = DEM, y = ..density..)) + 
-    geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
-    geom_density() +
+  title <- paste0('Min:', format(min(veris@data$DEM), digits = 1, nsmall = 1),
+                  ' / Median:', format(median(veris@data$DEM), digits = 1, nsmall = 1),
+                  ' / Mean:', format(mean(veris@data$DEM), digits = 1, nsmall = 1),
+                  ' / Max:', format(max(veris@data$DEM), digits = 1, nsmall = 1))
+  h1 <- ggplot(veris@data, aes(x = DEM)) + 
+    geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)") +
-    theme(axis.text = element_text(size = 10),
+    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
+    theme(title = element_text(size = 8),
+          axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
-  h2 <- ggplot(veris@data, aes(x = SWI, y = ..density..)) + 
-    geom_histogram(binwidth = 0.1, fill="cornsilk", colour="grey60", size=.2) +
-    geom_density() +
+  title <- paste0('Min:', format(min(veris@data$SWI), digits = 1, nsmall = 1),
+                  ' / Median:', format(median(veris@data$SWI), digits = 1, nsmall = 1),
+                  ' / Mean:', format(mean(veris@data$SWI), digits = 1, nsmall = 1),
+                  ' / Max:', format(max(veris@data$SWI), digits = 1, nsmall = 1))
+  h2 <- ggplot(veris@data, aes(x = SWI)) + 
+    geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad") +
-    theme(axis.text = element_text(size = 10),
+    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
+    theme(title = element_text(size = 8),
+          axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
-  h3 <- ggplot(veris@data, aes(x = EC30, y = ..density..)) + 
-    geom_histogram(binwidth = 0.5, fill="cornsilk", colour="grey60", size=.2) +
-    geom_density() +
+  title <- paste0('Min:', format(min(veris@data$EC30), digits = 1, nsmall = 1),
+                  ' / Median:', format(median(veris@data$EC30), digits = 1, nsmall = 1),
+                  ' / Mean:', format(mean(veris@data$EC30), digits = 1, nsmall = 1),
+                  ' / Max:', format(max(veris@data$EC30), digits = 1, nsmall = 1))
+  h3 <- ggplot(veris@data, aes(x = EC30)) + 
+    geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)") +
-    theme(axis.text = element_text(size = 10),
+    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
+    theme(title = element_text(size = 8),
+          axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
-  h4 <- ggplot(veris@data, aes(x = EC90, y = ..density..)) + 
-    geom_histogram(binwidth = 0.5, fill="cornsilk", colour="grey60", size=.2) +
-    geom_density() +
+  title <- paste0('Min:', format(min(veris@data$EC90), digits = 1, nsmall = 1),
+                  ' / Median:', format(median(veris@data$EC90), digits = 1, nsmall = 1),
+                  ' / Mean:', format(mean(veris@data$EC90), digits = 1, nsmall = 1),
+                  ' / Max:', format(max(veris@data$EC90), digits = 1, nsmall = 1))
+  h4 <- ggplot(veris@data, aes(x = EC90)) + 
+    geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)") +
-    theme(axis.text = element_text(size = 10),
+    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
+    theme(title = element_text(size = 8),
+          axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
-  h5 <- ggplot(veris@data, aes(x = OM, y = ..density..)) + 
-    geom_histogram(binwidth = 0.05, fill="cornsilk", colour="grey60", size=.2) +
-    geom_density() +
+  title <- paste0('Min:', format(min(veris@data$OM), digits = 1, nsmall = 1),
+                  ' / Median:', format(median(veris@data$OM), digits = 1, nsmall = 1),
+                  ' / Mean:', format(mean(veris@data$OM), digits = 1, nsmall = 1),
+                  ' / Max:', format(max(veris@data$OM), digits = 1, nsmall = 1))
+  h5 <- ggplot(veris@data, aes(x = OM)) + 
+    geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)") +
-    theme(axis.text = element_text(size = 10),
+    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
+    theme(title = element_text(size = 8),
+          axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
-  h6 <- ggplot(veris@data, aes(x = CEC, y = ..density..)) + 
-    geom_histogram(binwidth = 0.2, fill="cornsilk", colour="grey60", size=.2) +
-    geom_density() +
+  title <- paste0('Min:', format(min(veris@data$CEC), digits = 1, nsmall = 1),
+                  ' / Median:', format(median(veris@data$CEC), digits = 1, nsmall = 1),
+                  ' / Mean:', format(mean(veris@data$CEC), digits = 1, nsmall = 1),
+                  ' / Max:', format(max(veris@data$CEC), digits = 1, nsmall = 1))
+  h6 <- ggplot(veris@data, aes(x = CEC)) + 
+    geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)") +
-    theme(axis.text = element_text(size = 10),
+    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
+    theme(title = element_text(size = 8),
+          axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
           axis.title.y = element_text(size = 12, face = 'bold'))
   # PDF creation
-  pdf(paste0(Lote, '_Reporte_TDEC.pdf'), paper = "letter", height = 0, width = 0)
+  pdf(paste0(Lote, '_Reporte_TDCA.pdf'), paper = "letter", height = 0, width = 0)
   grid.arrange(arrangeGrob(l3, ncol=1),
                arrangeGrob(textGrob(txt2, gp = gpar(fontsize = 26, fontface = 'bold'),
                                     just = 'center'), ncol = 1),
