@@ -153,7 +153,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   # For each image in the list of intersecting ones, do...
   for (c in vi.lst) {
     # Get the year of current image
-    scn.year <- as.numeric(substr(c, 10, 13))
+    scn.year <- as.numeric(substr(basename(c), 10, 13))
     # Check if passes the year limit
     if (scn.year >= st.year) {
       r <- raster(c)
@@ -180,7 +180,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
           # Add the current mask to the stack
           r.stk <- stack(r.stk, r.crp)
           # Add this mask values to a reference data frame
-          df1 <- rbind.data.frame(df1, data.frame(SCN = c,
+          df1 <- rbind.data.frame(df1, data.frame(SCN = basename(c),
                                                   Year = scn.year,
                                                   VI = vi.mdn,
                                                   stringsAsFactors = F))
