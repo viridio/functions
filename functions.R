@@ -101,8 +101,8 @@ srtm_pr <- function(sp.layer) {
 }
 
 #Function to get and filter landsat images from selected paths
-mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
-                      st.year = 1990, vi.thr = 1500, cv.lim = 15) {
+mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr = 1500,
+                      cv.lim = 100, proj.obj = T, obj.fmt = "raster") {
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
@@ -110,11 +110,6 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   require(rgdal)
   require(rgeos)
   require(raster)
-  # Save current directory to return later
-  #   curr.wd <- getwd()
-  #   on.exit(setwd(curr.wd))
-  # Set current directory to the one that has the VI images
-  # setwd(paste0("~/SIG/Geo_util/raster/arg/" , vindx, "_Landsat/"))
   # Create a list of available images 
   img.lst <- list.files(paste0("~/SIG/Geo_util/raster/arg/",
                                vindx, "_Landsat/"),
@@ -131,14 +126,9 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   sp.layer <- spTransform(sp.layer, geo.str)
   # Get on which landsat path rows the layer intersects
   scn.pr <- scn_pr(sp.layer)
-  # Create empty stacks and data.frames to store information
-  r.stk <- stack()
-  r.stk2 <- stack()
-  df1 <- data.frame()
-  df2<- data.frame()
-  i <- 1
   # Go through the images until finding the one that fully covers the layer
   vi.lst <- grep(paste(scn.pr, collapse = "|"), img.lst, value = T)
+  i <- 1
   r.base <- raster(vi.lst[i])
   proj4string(r.base) <- geo.str
   r.crp.bs <- crop(r.base, sp.layer, snap = "near")
@@ -151,6 +141,10 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
   # Mask the selected image to use as base for the next ones
   r.crp.bs <- mask(r.crp.bs, sp.layer)
   # For each image in the list of intersecting ones, do...
+  # Create empty bricks and data.frames to store information
+  r.stk.lst <- list()
+  df.lst1 <- list()
+  rwn <- 1
   for (c in vi.lst) {
     # Get the year of current image
     scn.year <- as.numeric(substr(basename(c), 10, 13))
@@ -177,41 +171,79 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30,
             # If this mask doesn't match the base it is resampled
             r.crp <- resample(r.crp, r.crp.bs, method = "bilinear")
           }
-          # Add the current mask to the stack
-          r.stk <- stack(r.stk, r.crp)
+          # Add the current mask to the brick
+          r.stk.lst[[rwn]] <- r.crp
           # Add this mask values to a reference data frame
-          df1 <- rbind.data.frame(df1, data.frame(SCN = basename(c),
-                                                  Year = scn.year,
-                                                  VI = vi.mdn,
-                                                  stringsAsFactors = F))
+          df.lst1[[rwn]] <- data.frame("SCN" = sub(".tif", "", basename(c)),
+                                       "Year" = scn.year, "VI" = vi.mdn,
+                                       stringsAsFactors = F)
+          rwn <- rwn + 1
         }
       }
     }
   }
+  # Check length of obtained images
+  if (length(r.stk.lst) < 1) {
+    stop("no images left with selected parameters")
+  }
+  # Create brick and data.frame from list
+  r.stk <- brick(r.stk.lst)
+  df1 <- do.call(rbind, df.lst1)
+  # Order data.frame by year
+  df1 <- df1[order(df1$Year),]
+  df.lst2 <- list()
+  rwn <- 1
   # The following will leave only one image per year
-  if (length(unique(df1$Year)) < length(df1$Year)) {
+  if (length(unique(df1$Year)) < nrow(df1)) {
     for (d in unique(df1$Year)) {
       # Leave the one with highest median
       vi.max <- max(df1[df1$Year == d, "VI"])
-      df2 <- rbind.data.frame(df2, df1[df1$VI == vi.max,])
+      df.lst2[[rwn]] <- df1[df1$VI == vi.max,]
+      rwn <- rwn + 1
     }
-    df2 <- df2[order(df2$Year),]
-    for (e in df2$SCN) {
-      r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
-    }
+    # Final data.frame and brick
+    df2 <- do.call(rbind, df.lst2)
+    r.stk2 <- subset(r.stk, df2$SCN)
   } else {
-    df1 <- df1[order(df1$Year),]
-    for (e in df1$SCN) {
-      r.stk2 <- stack(r.stk2, r.stk[[which(df1$SCN == e)]])
+    r.stk2 <- subset(r.stk, df1$SCN)
+  }
+  # Get brick name and create new ones
+  nms <- names(r.stk2)
+  nw.nms <- gsub("^", "EVI", substr(nms, 10, 13))
+  # Convert to SpatialPointsDF
+  r.stk2 <- rasterToPoints(r.stk2, spatial = T)
+  names(r.stk2) <- nw.nms
+  r.stk2@data <- round(r.stk2@data, 2)
+  # Remove points with NAs
+  r.stk2 <- r.stk2[complete.cases(r.stk2@data),]
+  # Convert to raster if desired
+  if (obj.fmt == "raster") {
+    r.stk2 <- pnt2rstr(r.stk2)
+  }
+  # Project object
+  if (proj.obj) {
+    if (inherits(r.stk2, "Raster")) {
+      require(gdalUtils)
+      # Generate temp file names
+      tmp1 <- tempfile(fileext = ".tif")
+      tmp2 <- tempfile(fileext = ".tif")
+      # Write temporary raster
+      writeRaster(r.stk2, filename = tmp1)
+      # Project raster with cubic convolution resampling
+      r.stk2 <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.str,
+                         r = "cubic", output_Raster = T)
+      names(r.stk2) <- nw.nms
+    }
+    if (inherits(r.stk2, "Spatial")) {
+      # Project points
+      r.stk2 <- spTransform(x = r.stk2, CRSobj = prj.str)
     }
   }
-  # Project stack
-  r.stk2 <- projectRaster(r.stk2, crs = prj.str, method = "bilinear")
   return(r.stk2)
 }
 
 #Function to get and filter srtm images from selected lat/long
-dem_srtm <- function(sp.layer, buff = 30, format = 'point') {
+dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
@@ -259,14 +291,33 @@ dem_srtm <- function(sp.layer, buff = 30, format = 'point') {
   } else {
     msc <- rmsk1
   }
-  if (format != 'raster'){
+  if (proj.obj) {
+    if (format != "raster"){
+      msc.pnt <- rasterToPoints(msc, spatial = T)
+      msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
+      names(msc.p) <- "elev"
+      return(msc.p)
+    } else {
+      require(gdalUtils)
+      # Generate temp file names
+      tmp1 <- tempfile(fileext = ".tif")
+      tmp2 <- tempfile(fileext = ".tif")
+      # Write temporary raster
+      writeRaster(msc, filename = tmp1)
+      # Project raster with cubic convolution resampling
+      msc.p <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.str,
+                        r = "cubic", output_Raster = T)
+      names(msc.p) <- "elev"
+      return(msc.p)
+    }
+  }
+  if (format != "raster") {
     msc.pnt <- rasterToPoints(msc, spatial = T)
-    msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
     names(msc.p) <- "elev"
     return(msc.p)
-  } else {
-    return(msc)
   }
+  # Return raster in Lat-Lon
+  return(msc)
 }
 
 #Function to reclassify a raster in n classes by jenks
@@ -676,23 +727,26 @@ pnt2rstr <- function(sp.layer, field = names(sp.layer)){
   require(raster)
   # Get layer CRS
   lyr.crs <- CRS(proj4string(sp.layer))
-  # Check if there's more than one field to convert to raster
+  # Check for regular spacing
   p2g <- try(points2grid(sp.layer))
   if (class(p2g)[1] == "try-error") {
     stop("points aren't regularly spaced")
   }
+  # Check if there's more than one field to convert to raster
   if (length(field) > 1) {
     # Create empty stack
-    sp.rstr <- stack()
+    rstr.lst <- list()
+    rwn <- 1
     for (a in field) {
       if (a %in% names(sp.layer@data) == F) {
         stop("field isn't an attribute in SpatialPointsDataFrame")
       }
-      sp.spix <- SpatialPixelsDataFrame(sp.layer, 
-                                        data = sp.layer@data[a],
-                                        proj4string = lyr.crs)
-      sp.rstr <- stack(sp.rstr, raster(sp.spix))
+      rstr.lst[[rwn]] <- raster(SpatialPixelsDataFrame(sp.layer, 
+                                                       data = sp.layer@data[a],
+                                                       proj4string = lyr.crs))
+      rwn <- rwn + 1
     }
+    sp.rstr <- brick(rstr.lst)
   } else {
     if (field %in% names(sp.layer@data) == F) {
       stop("field isn't an attribute in SpatialPointsDataFrame")
@@ -1331,6 +1385,16 @@ read_kmz <- function(kmz.file) {
   return(sp.lyr)
 }
 
+# Wrapper around writeOGR for simplification
+write_shp <- function(sp.layer, file.name, overwrite = F) {
+  if (!inherits(sp.layer, "Spatial")) {
+    stop("sp.layer isn't a Spatial* object")
+  }
+  require(rgdal)
+  writeOGR(obj = sp.layer, dsn = dirname(file.name), layer = basename(file.name),
+           overwrite_layer = overwrite, driver = "ESRI Shapefile")
+}
+
 # Function to convert raster to polygons
 rstr2pol <- function(raster) {
   require(rgdal)
@@ -1715,4 +1779,4 @@ save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, file = "~/SIG/Geo_util/Functions.RData")
+     rstr2pol, report_tdec, write_shp, file = "~/SIG/Geo_util/Functions.RData")
