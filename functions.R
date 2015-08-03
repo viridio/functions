@@ -628,9 +628,8 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
   # If one wants the NAs can be filled
   if (fill) {
     if (any(is.na(sp.layer@data))) {
-      require(DMwR)
-      # Impute de missing data
-      sp.layer@data <- knnImputation(sp.layer@data)
+      # Impute missing data
+      sp.layer@data <- df_impute(sp.layer@data)
     }
   }
   # If the results are needed in polygon
@@ -1323,8 +1322,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   library(ade4)
   library(spdep)
   if (any(is.na(sp.layer@data[vrbls]))) {
-    library(DMwR)
-    sp.layer@data <- knnImputation(sp.layer@data[vrbls])
+    sp.layer@data <- df_impute(sp.layer@data[vrbls])
   } else {
     sp.layer@data <- sp.layer@data[vrbls]
   }
