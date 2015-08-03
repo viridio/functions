@@ -348,7 +348,7 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 #Rsaga DEM Covariates
 dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
   if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
-      !inherits(DEM.layer, "RasterLayer")) {
+      !inherits(DEM.layer, "Raster")) {
     stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
   }
   require(sp)
@@ -476,8 +476,7 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
     base.lyr@data[attr.name] <- terr.data
   }
   if (any(is.na(base.lyr@data))) {
-    require(DMwR)
-    base.lyr@data <- knnImputation(base.lyr@data)
+    base.lyr@data <- df_impute(base.lyr@data)
   }
   file.remove(list.files(path = ".", pattern = "sdat|sgrd|mgrd|prj"))
   return(base.lyr)
@@ -1811,8 +1810,44 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   dev.off()
 }
 
+# Impute missing values in data.frame
+df_impute <- function(dt.frm, n.neig = 2) {
+  if (!inherits(dt.frm, "data.frame")) {
+    stop("input isn't a data.frame")
+  }
+  if (!any(is.na(dt.frm))) return(dt.frm)
+  # Save default value for nearest neighbors
+  def.neigh <- n.neig
+  # Get columns with NAs
+  na.cols <- colnames(dt.frm)[unlist(lapply(dt.frm, function(x) any(is.na(x))))]
+  # For every column with NA do...
+  for (cl in na.cols) {
+    # Get vector of values
+    cl.df <- dt.frm[, cl]
+    # Get indices of NAs
+    na.lns <- which(is.na(cl.df))
+    # For each index do...
+    for (ln in na.lns) {
+      # Get index neighbors
+      mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
+      # If NAs in neighbors increase number of neighbors
+      if (any(is.na(cl.df[mn.lns]))) {
+        n.neig <- n.neig + 1
+        mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
+      }
+      # Compute mean
+      imp.mn <- mean(cl.df[mn.lns], na.rm = T)
+      if (is.integer(cl.df)) imp.mn <- round(imp.mn)
+      # Replace value
+      dt.frm[ln, cl] <- imp.mn
+      n.neig <- def.neigh
+    }
+  }
+  return(dt.frm)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, file = "~/SIG/Geo_util/Functions.RData")
+     rstr2pol, report_tdec, write_shp, df_impute, file = "~/SIG/Geo_util/Functions.RData")
