@@ -293,11 +293,13 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   }
   if (proj.obj) {
     if (format != "raster"){
+      # Return projected SpatialPoints
       msc.pnt <- rasterToPoints(msc, spatial = T)
       msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
       names(msc.p) <- "elev"
       return(msc.p)
     } else {
+      # Return projected Raster
       require(gdalUtils)
       # Generate temp file names
       tmp1 <- tempfile(fileext = ".tif")
@@ -312,9 +314,10 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
     }
   }
   if (format != "raster") {
+    # Return SpatialPoints in Lat-Lon
     msc.pnt <- rasterToPoints(msc, spatial = T)
-    names(msc.p) <- "elev"
-    return(msc.p)
+    names(msc.pnt) <- "elev"
+    return(msc.pnt)
   }
   # Return raster in Lat-Lon
   return(msc)
@@ -343,7 +346,7 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 }
 
 #Rsaga DEM Covariates
-dem_cov <- function(DEM.layer, dem.attr = "DEM") {
+dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
   if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
       !inherits(DEM.layer, "RasterLayer")) {
     stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
@@ -351,15 +354,24 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
   require(sp)
   require(RSAGA)
   require(raster)
-  if ("./DEM_derivates" %in% list.dirs()) {
-    unlink("./DEM_derivates", recursive = T, force = T)
-  }
-  # Topography derivates folder creation
-  dir.create("DEM_derivates")
   # Save current directory
   curr.wd <- getwd()
   on.exit(setwd(curr.wd))
-  setwd("./DEM_derivates")
+  if (save.rst) {
+    if ("./DEM_derivates" %in% list.dirs()) {
+      unlink("./DEM_derivates", recursive = T, force = T)
+    }
+    # Topography derivates folder creation
+    dir.create("DEM_derivates")
+    setwd("./DEM_derivates")
+  } else {
+    tmp.dir <- paste0(tempdir(), "\\DEM_derivates")
+    if (dir.exists(tmp.dir)) {
+      unlink(tmp.dir, recursive = T, force = T)
+      dir.create(tmp.dir)
+    }
+    setwd(tmp.dir)
+  }
   base.lyr <- DEM.layer
   # Store dem layer CRS
   lyr.crs <- CRS(proj4string(base.lyr))
@@ -373,55 +385,78 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
   # Save raster as GeoTIFF
   writeRaster(base.rstr, dem.file)
   # Convert raster layer to points to add the layers
-  if (inherits(base.lyr, "RasterLayer")) {
+  if (inherits(base.lyr, "Raster")) {
     base.lyr <- rasterToPoints(base.lyr, spatial = T)
   }
   # Convert GeoTIFF to Saga Grid
   rsaga.import.gdal(dem.file, show.output.on.console = F)
-  # Calculate Slope and Aspect
-  rsaga.geoprocessor("ta_morphometry", module = 0,
-                     param = list(ELEVATION = "dem.sgrd",
-                                  SLOPE = "Slope",
-                                  ASPECT = "Aspect",
-                                  METHOD = 1),
-                     show.output.on.console = F)
-  # Calculate Curvatures
-  rsaga.geoprocessor("ta_morphometry", module = 0,
-                     param = list(ELEVATION = "dem.sgrd",
-                                  CURV = "Curv",
-                                  HCURV = "PrCurv",
-                                  VCURV = "PlCurv",
-                                  METHOD = 5),
-                     show.output.on.console = F)
-  # Calculate Catchment Area
-  rsaga.geoprocessor("ta_hydrology", module = 18,
-                     param = list(DEM = "dem.sgrd",
-                                  AREA = "Catch_Area"),
-                     show.output.on.console = F)
-  # Calculate CTI
-  rsaga.geoprocessor("ta_hydrology", module = 20,
-                     param = list(SLOPE = "Slope.sgrd",
-                                  AREA = "Catch_Area.sgrd",
-                                  TWI = "CTI"),
-                     show.output.on.console = F)
-  # Calculate Convergence Index
-  rsaga.geoprocessor("ta_morphometry", module = 1,
-                     param = list(ELEVATION = "dem.sgrd",
-                                  RESULT = "Conv_Index"),
-                     show.output.on.console = F)
-  # Calculate LS Factor
-  rsaga.geoprocessor("ta_hydrology", module = 22,
-                     param = list(SLOPE = "Slope.sgrd",
-                                  AREA = "Catch_Area.sgrd",
-                                  LS = "LS_Factor",
-                                  METHOD = 2),
-                     show.output.on.console = F)
-  # Calculate Saga Wetness Index
-  rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
-                      show.output.on.console = F)
+  if (length(deriv) > 1) {
+    deriv.lst <- deriv
+  } else {
+    if (deriv == "all") {
+      deriv.lst <- c("Slope", "Aspect", "Curv", "Catch_area", "CTI",
+                     "Conv_Index", "LS_Factor", "SWI")
+    } else {
+      deriv.lst <- deriv
+    }
+  }
+  if (length(grep("cti|slo|asp", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Slope and Aspect
+    rsaga.geoprocessor("ta_morphometry", module = 0,
+                       param = list(ELEVATION = "dem.sgrd",
+                                    SLOPE = "Slope",
+                                    ASPECT = "Aspect",
+                                    METHOD = 1),
+                       show.output.on.console = F)
+  }
+  if (length(grep("curv", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Curvatures
+    rsaga.geoprocessor("ta_morphometry", module = 0,
+                       param = list(ELEVATION = "dem.sgrd",
+                                    CURV = "Curv",
+                                    HCURV = "PrCurv",
+                                    VCURV = "PlCurv",
+                                    METHOD = 5),
+                       show.output.on.console = F)
+  }
+  if (length(grep("cti|catch", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Catchment Area
+    rsaga.geoprocessor("ta_hydrology", module = 18,
+                       param = list(DEM = "dem.sgrd",
+                                    AREA = "Catch_Area"),
+                       show.output.on.console = F)
+  }
+  if (length(grep("cti", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate CTI
+    rsaga.geoprocessor("ta_hydrology", module = 20,
+                       param = list(SLOPE = "Slope.sgrd",
+                                    AREA = "Catch_Area.sgrd",
+                                    TWI = "CTI"),
+                       show.output.on.console = F)
+  }
+  if (length(grep("conv", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Convergence Index
+    rsaga.geoprocessor("ta_morphometry", module = 1,
+                       param = list(ELEVATION = "dem.sgrd",
+                                    RESULT = "Conv_Index"),
+                       show.output.on.console = F)
+  }
+  if (length(grep("ls|fac", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate LS Factor
+    rsaga.geoprocessor("ta_hydrology", module = 22,
+                       param = list(SLOPE = "Slope.sgrd",
+                                    AREA = "Catch_Area.sgrd",
+                                    LS = "LS_Factor",
+                                    METHOD = 2),
+                       show.output.on.console = F)
+  }
+  if (length(grep("swi|saga", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Saga Wetness Index
+    rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
+                        show.output.on.console = F)
+  }
   # List all grid files created
-  sgrd.lst <- list.files(".", pattern = ".sgrd$")
-  sgrd.lst <- sgrd.lst[!(sgrd.lst %in% "dem.sgrd")]
+  sgrd.lst <- paste0(deriv.lst, ".sgrd")
   # Iterate over list of grids
   for (a in sgrd.lst) {
     # Get name for tiff
@@ -444,6 +479,7 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM") {
     require(DMwR)
     base.lyr@data <- knnImputation(base.lyr@data)
   }
+  file.remove(list.files(path = ".", pattern = "sdat|sgrd|mgrd|prj"))
   return(base.lyr)
 }
 
