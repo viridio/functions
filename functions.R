@@ -1063,7 +1063,7 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   for(i in 1:nrow(lm.summ)){
     model <- LMs[[lm.summ$model[i]]]
     vrbl.lm <- as.character(attr(terms(model), "term.labels"))
-    label <- paste('Model N?', lm.summ$model[i], ": ", var, 
+    label <- paste('Model NÂ°', lm.summ$model[i], ": ", var, 
                    " ~ ", paste(vrbl.lm, collapse = " + "), sep="")
     pred.int <- predict(model, newdata = sp.layer@data[vrbl.lm])
     sp.layer@data['Pred'] <- pred.int
@@ -1396,7 +1396,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   soil@data$Muestra <- 1:dim(soil@data)[1]
   # Soil samples data
   vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
-  #vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
+#  vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (meq/100g)', 
               'Na (meq/100g)', 'Zn (ppm)', 'CIC (meq/100g)')
 #   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (ppm)', 
@@ -1577,11 +1577,11 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
     scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
                        labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
   p7 <- ggplot() +
-    geom_polygon(data = spz.df, aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
-#     geom_polygon(data = spz.df[spz.df$id %in% spz.df[spz.df$hole,]$id,], 
-#                  aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
-#     geom_polygon(data = spz.df[!spz.df$id %in% spz.df[spz.df$hole,]$id,], 
-#                  aes(x = long, y = lat, group = group, fill = Zone), colour = 'black') +
+    # geom_polygon(data = spz.df, aes(x = long, y = lat, group = group, fill = Zone), colour = 'black', size = 0.3) +
+    geom_polygon(data = spz.df[spz.df$id %in% spz.df[spz.df$hole,]$id,], 
+                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black', size = 0.3) +
+    geom_polygon(data = spz.df[!spz.df$id %in% spz.df[spz.df$hole,]$id,], 
+                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black', size = 0.3) +
     geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
     geom_text(data = soil@data, aes(x = long, y = lat, label = soil@data$Muestra), hjust = 1, vjust = 1) +
     coord_equal() + labs(x = 'Longitud', y = 'Latitud', title = 'Calidad de Sitio', fill = '') +
@@ -1615,7 +1615,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
