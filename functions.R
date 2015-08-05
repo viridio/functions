@@ -667,7 +667,8 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
     usd.var <- names(sp.layer)
   }
   # Create column with specific hybrid
-  sp.poly@data <- data.frame(Hybrid = rep(hybrid, nrow(sp.poly@data)))
+  sp.poly@data <- data.frame(Hybrid = rep(hybrid, nrow(sp.poly@data)),
+                             stringsAsFactors = F)
   # Create expected yield column with prediction
   sp.poly@data["Exp_Yld"] <- predict(pred.model, sp.layer@data[usd.var],
                                      quantiles = quantile)
@@ -1306,7 +1307,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Extraction of the data frame rows that match with the clipped polygons
   df <- over(pol.4, pol.3.pnt)
   # Final spatialpolygondf with attribute table
-  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = pol.3@data[df,], match.ID = F)
+  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = df, match.ID = F)
   gc()
   return(pol.5)
 }
