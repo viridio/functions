@@ -209,7 +209,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
   }
   # Get brick name and create new ones
   nms <- names(r.stk2)
-  nw.nms <- gsub("^", "EVI", substr(nms, 10, 13))
+  nw.nms <- gsub("^", vindx, substr(nms, 10, 13))
   # Convert to SpatialPointsDF
   r.stk2 <- rasterToPoints(r.stk2, spatial = T)
   names(r.stk2) <- nw.nms
