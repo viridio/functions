@@ -810,11 +810,16 @@ geo_centroid <- function(sp.layer){
   return(coord)
 }
 
-moran_cln <- function(sp.layer, vrbl, dist = 20) {
+moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
+  if (!GM & !LM) {
+    cat("WARNING: no cleaning performed, select GM, LM or both")
+    return(sp.layer)
+  }
+  sp.orig <- sp.layer
   # Remove NA's
   if (any(is.na(sp.layer@data[,vrbl]))) {
     sp.layer <- sp.layer[-which(is.na(sp.layer@data[,vrbl])),]
@@ -823,6 +828,10 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
   nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
   # Get number of neighbours in the neighbours list
   nb.crd <- card(nb.lst)
+  if (all(nb.crd == 0)) {
+    cat("WARNING: no cleaning performed, try increasing the neighbor distance\n")
+    return(sp.orig)
+  }
   # Remove points with no neighbors
   spl.noznb <- subset(sp.layer, nb.crd > 0)
   # Also in neighbor list
@@ -831,28 +840,38 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
   w.mat <- nb2listw(nb.noznb, style = "W")
   # Get numerical data of variable
   vrbl.dt <- spl.noznb@data[, vrbl]
-  # Compute the lag vector V x
-  wx <- lag.listw(w.mat, vrbl.dt)
-  # Lineal model of lagged vs observed variable
-  xwx.lm <- lm(wx ~ vrbl.dt)
-  # Compute regression (leave-one-out deletion) diagnostics for linear model
-  # and only get get the logical influence matrix
-  infl.xwx <- influence.measures(xwx.lm)[["is.inf"]]
-  # Convert to numeric, 6 column matrix for computation of sums
-  infl.mat <- matrix(as.numeric(infl.xwx), ncol = 6)
-  # Calculate moran scatterplot parameters
-  #mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
-  # Get those rows where at least one index is TRUE
-  mp.out <- which(rowSums(infl.mat) != 0)
-  # Calculate local moran
-  lmo <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
-                    alternative = "less")
-  # Convert to data.frame to select data
-  lmo <- data.frame(lmo)
-  # Get rows wheres indices are significative
-  lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
-  # Get the unique rows to delete
-  all.out <- unique(c(mp.out, lm.out))
+  if (GM) {
+    # Compute the lag vector V x
+    wx <- lag.listw(w.mat, vrbl.dt)
+    # Lineal model of lagged vs observed variable
+    xwx.lm <- lm(wx ~ vrbl.dt)
+    # Compute regression (leave-one-out deletion) diagnostics for
+    # linear model and only get get the logical influence matrix
+    infl.xwx <- influence.measures(xwx.lm)[["is.inf"]]
+    # Convert to numeric, 6 column matrix for computation of sums
+    infl.mat <- matrix(as.numeric(infl.xwx), ncol = 6)
+    # Calculate moran scatterplot parameters
+    #mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
+    # Get those rows where at least one index is TRUE
+    mp.out <- which(rowSums(infl.mat) != 0)
+  }
+  if (LM) {
+    # Calculate local moran
+    lmo <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
+                      alternative = "less")
+    # Convert to data.frame to select data
+    lmo <- data.frame(lmo)
+    # Get rows wheres indices are significative
+    lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
+  }
+  if (GM & LM) {
+    # Get the unique rows to delete
+    all.out <- unique(c(mp.out, lm.out))
+  } else if(GM) {
+    all.out <- mp.out
+  } else if(LM) {
+    all.out <- lm.out
+  }
   # Remove them from SPDF
   spl.noznb <- spl.noznb[-all.out, ]
   return(spl.noznb)
