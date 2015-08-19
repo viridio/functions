@@ -325,8 +325,8 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
 
 #Function to reclassify a raster in n classes by jenks
 rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
-  if (!inherits(raster.lyr, "RasterLayer")){
-    stop("Input object isn't a RasterLayer object")
+  if (!inherits(raster.lyr, "Raster")){
+    stop("Input object isn't a Raster* object")
   }
   if (n.class != length(val)) {
     stop("Number of classes doesn't match number of values")
@@ -349,7 +349,7 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
   if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
       !inherits(DEM.layer, "Raster")) {
-    stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
+    stop("DEM.layer isn't a SpatialPointsDataFrame or Raster* object")
   }
   require(sp)
   require(RSAGA)
@@ -708,13 +708,13 @@ grd_m <- function(sp.layer, dist = 10) {
 }
 
 mz_smth <- function(sp.layer, area = 2500) {
-  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "RasterLayer")) {
-    stop("sp.layer isn't a SpatialPolygons* or RasterLayer object")
+  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "Raster")) {
+    stop("sp.layer isn't a SpatialPolygons* or Raster* object")
   }
   require(rgrass7)
   require(raster)
   # If the input is a raster convert to polygons and dissolve by zone
-  if (inherits(sp.layer, "RasterLayer")) {
+  if (inherits(sp.layer, "Raster")) {
     sp.layer <- rstr2pol(sp.layer)
     # crs(sp.layer) <- prj.str
   }
@@ -1452,8 +1452,8 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
 rstr2pol <- function(raster) {
   require(rgdal)
   require(RSAGA)
-  if (!inherits(raster, "RasterLayer")) {
-    stop("sp.layer isn't a RasterLayer object")
+  if (!inherits(raster, "Raster")) {
+    stop("sp.layer isn't a Raster* object")
   }
   # Create temporary files
   tmp.rstr <- tempfile(fileext = ".tif")
@@ -1864,8 +1864,32 @@ df_impute <- function(dt.frm, n.neig = 2) {
   return(dt.frm)
 }
 
-save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
-     cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
+# Raster resampling using GdalUtils
+r_rsmp <- function(r.layer, fact = 3) {
+  if (!inherits(r.layer, "Raster")) {
+    stop("sp.layer isn't a Raster* object")
+  }
+  require(gdalUtils)
+  # Store band names for future use
+  bnd.nms <- names(r.layer)
+  # Generate temp file names
+  tmp1 <- tempfile(fileext = ".tif")
+  tmp2 <- tempfile(fileext = ".tif")
+  # Write temporary raster
+  writeRaster(r.layer, filename = tmp1)
+  # Define raster size
+  cl.sz <- res(r.layer) / fact
+  # Project raster with cubic convolution resampling
+  rsmp.rstr <- gdalwarp(srcfile = tmp1, dstfile = tmp2, tr = cl.sz,
+                        r = "cubic", output_Raster = T)
+  # Assign back band names
+  names(rsmp.rstr) <- bnd.nms
+  return(rsmp.rstr)
+}
+
+save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
+     elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, df_impute, file = "~/SIG/Geo_util/Functions.RData")
+     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp,
+     file = "~/SIG/Geo_util/Functions.RData")
