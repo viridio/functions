@@ -483,7 +483,8 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
 }
 
 # Defining the MBA interpolation function
-int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, krig = F) {
+int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F,
+                   dist = 20, clean = T, krig = F) {
   if (!inherits(base.pnts, "SpatialPoints") |
       !inherits(obs.pnts, "SpatialPointsDataFrame")) {
     stop("at least one of the inputs isn't a SpatialPoints* object")
@@ -529,7 +530,7 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, k
       if (class(vg.fit)[1] != "try-error") {
         # Krig with fitted lambda
         vrbl.krig <- krige((vrbl.data ^ vg.fit[[1]]) ~ 1, locations = obs.vrbl,
-                           newdata = base.map, model = vg.fit[[3]])
+                           nmax = 100, newdata = base.map, model = vg.fit[[3]])
         # Reverse conversion with lambda to obtain original units
         vrbl.krig@data[, 1] <- vrbl.krig@data[, 1] ^ (1 / vg.fit[[1]])
         # Add data to layer
@@ -915,7 +916,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   # Assing object in Global Environment for lineal model
   assign(".vrbl.dt", vrbl.dt, envir = .GlobalEnv)
   # Lambda calculation for normality
-  vrbl.bc <- boxcox(lm(.vrbl.dt ~ 1), lambda = seq(-5, 5, 0.01), plotit = F)
+  vrbl.bc <- boxcox(lm(.vrbl.dt ~ 1), lambda = seq(5, 5, 0.01), plotit = F)
   # Delete GlobalEnv object
   remove(".vrbl.dt", envir = .GlobalEnv)
   # Test for normality and assignment of lambda
@@ -964,11 +965,16 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
                                     warn.if.neg = T),
                       error = function(e) return("error"),
                       warning = function(w) return("warning"))
-  if (class(fit.res)[1] == "character" | attr(fit.res, "singular") |
-        fit.res$psill[1] >= fit.res$psill[2]) {
+  if (class(fit.res)[1] == "character") {
     stop("a variogram could not be fitted")
-  } else {
-    vrbl.fit <- fit.res
+  }
+  if (!is.null(attr(fit.res, "singular"))) {
+    if (attr(fit.res, "singular")) {
+      stop("a variogram could not be fitted")
+    }
+  }
+  if (fit.res$psill[1] >= fit.res$psill[2]) {
+    stop("a variogram could not be fitted")
   }
   fit.res <- fit.variogram(vrbl.vgm, vgm(isill, sh.mod, irange, inug), 
                            fit.sills = T, fit.ranges = T, warn.if.neg = T)
@@ -976,7 +982,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   # Wether to plot the variograms (exp & fit)
   if (plot) {
     print(
-      plot(vrbl.vgm, model = vrbl.fit, pch = 21, cex = 2, lty = 2, lwd = 2,
+      plot(vrbl.vgm, model = vrbl.fit, pch = 19, cex = 2, lty = 2, lwd = 2,
            col = "red", xlab = "Distance", ylab = "Semivariance",
            main = paste0("Emp. & fitted semivariogram for ", vrbl.nm))
     )
