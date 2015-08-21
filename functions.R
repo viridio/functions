@@ -1450,7 +1450,13 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
     stop("sp.layer isn't a Spatial* object")
   }
   require(rgdal)
-  writeOGR(obj = sp.layer, dsn = dirname(file.name), layer = basename(file.name),
+  # Check if it has extension  for the two functions
+  if (length(grep(".shp$", file.name, ignore.case = T)) == 1) {
+    fl.nm2 <- sub(".shp", "", file.name)
+  } else {
+    fl.nm2 <- file.name
+  }
+  writeOGR(obj = sp.layer, dsn = dirname(file.name), layer = basename(fl.nm2),
            overwrite_layer = overwrite, driver = "ESRI Shapefile")
 }
 
@@ -1852,12 +1858,18 @@ df_impute <- function(dt.frm, n.neig = 2) {
     na.lns <- which(is.na(cl.df))
     # For each index do...
     for (ln in na.lns) {
-      # Get index neighbors
-      mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
-      # If NAs in neighbors increase number of neighbors
-      if (any(is.na(cl.df[mn.lns]))) {
-        n.neig <- n.neig + 1
+      # Get index of neighbors
+      if (ln == 1) {
+        mn.lns <- 2:3
+      } else if (ln == length(cl.df)) {
+        mn.lns <- (length(cl.df) - 2):(length(cl.df) - 1)
+      } else {
         mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
+        # If NAs in neighbors increase number of neighbors
+        if (any(is.na(cl.df[mn.lns]))) {
+          n.neig <- n.neig + 1
+          mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
+        }
       }
       # Compute mean
       imp.mn <- mean(cl.df[mn.lns], na.rm = T)
