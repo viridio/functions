@@ -916,7 +916,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   # Assing object in Global Environment for lineal model
   assign(".vrbl.dt", vrbl.dt, envir = .GlobalEnv)
   # Lambda calculation for normality
-  vrbl.bc <- boxcox(lm(.vrbl.dt ~ 1), lambda = seq(5, 5, 0.01), plotit = F)
+  vrbl.bc <- boxcox(lm(.vrbl.dt ~ 1), lambda = seq(-5, 5, 0.01), plotit = F)
   # Delete GlobalEnv object
   remove(".vrbl.dt", envir = .GlobalEnv)
   # Test for normality and assignment of lambda
