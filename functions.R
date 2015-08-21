@@ -1859,10 +1859,10 @@ df_impute <- function(dt.frm, n.neig = 2) {
     # For each index do...
     for (ln in na.lns) {
       # Get index of neighbors
-      if (ln == 1) {
-        mn.lns <- 2:3
-      } else if (ln == length(cl.df)) {
-        mn.lns <- (length(cl.df) - 2):(length(cl.df) - 1)
+      if (ln - n.neig < 0) {
+        mn.lns <- (ln + 1):(ln + n.neig)
+      } else if (ln + n.neig > length(cl.df)) {
+        mn.lns <- (ln - n.neig):(ln - 1)
       } else {
         mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
         # If NAs in neighbors increase number of neighbors
@@ -1872,8 +1872,12 @@ df_impute <- function(dt.frm, n.neig = 2) {
         }
       }
       # Compute mean
-      imp.mn <- mean(cl.df[mn.lns], na.rm = T)
-      if (is.integer(cl.df)) imp.mn <- round(imp.mn)
+      if (is.character(cl.df)) {
+        imp.mn <- Mode(cl.df[mn.lns], na.rm = T)
+      } else {
+        imp.mn <- mean(cl.df[mn.lns], na.rm = T)
+        if (is.integer(cl.df)) imp.mn <- round(imp.mn)
+      }
       # Replace value
       dt.frm[ln, cl] <- imp.mn
       n.neig <- def.neigh
@@ -1905,9 +1909,18 @@ r_rsmp <- function(r.layer, fact = 3) {
   return(rsmp.rstr)
 }
 
+Mode <- function(x, na.rm = FALSE) {
+  if(na.rm){
+    x = x[!is.na(x)]
+  }
+  ux <- unique(x)
+  x.mode <- ux[which.max(tabulate(match(x, ux)))]
+  return(x.mode)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp,
+     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode,
      file = "~/SIG/Geo_util/Functions.RData")
