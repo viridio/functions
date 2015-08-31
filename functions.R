@@ -1918,9 +1918,21 @@ Mode <- function(x, na.rm = FALSE) {
   return(x.mode)
 }
 
+utm_zone <- function(sp.layer) {
+  if (!inherits(sp.layer, "Spatial")){
+    stop("sp.layer isn't a Spatial* object")
+  }
+  if (is.projected(sp.layer)) {
+    sp.layer <- spTransform(sp.layer, geo.str)
+  }
+  long <- mean(sp.layer@bbox[1,])
+  utm.zn <- (floor((long + 180) / 6) %% 60) + 1
+  return(utm.zn)
+}
+
 save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode,
+     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone,
      file = "~/SIG/Geo_util/Functions.RData")
