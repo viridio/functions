@@ -1353,7 +1353,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   row.names(data) <- unlist(pol.lst)
   # Adding the data frame to the polygons
   pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
-  proj4string(pol.2) <- prj_str
+  proj4string(pol.2) <- prj.crs
   if (ang > 0) {
     # Rotation of the polygons by the defined angle
     pol.3 <- elide(pol.2, rotate = ang,
