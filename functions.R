@@ -1,6 +1,10 @@
 load(file = "~/SIG/Geo_util/Functions.RData")
 
-prj.str <- CRS("+proj=utm +zone=20 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+prj_str <- function(zone) {
+  zn.str <- paste0("+proj=utm +zone=", zone,
+                   " +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+  return(CRS(zn.str))
+}
 
 geo.str <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 
@@ -115,8 +119,9 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
                                vindx, "_Landsat/"),
                         ".tif$", full.names = T)
   # Check projection of layer and project to measure distances
-  if (is.projected(sp.layer) == F) {
-    sp.layer <- spTransform(sp.layer, prj.str)
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   # Assign ownership of holes to parent polygons
   sp.comm <- createSPComment(sp.layer)
@@ -230,13 +235,15 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
       # Write temporary raster
       writeRaster(r.stk2, filename = tmp1)
       # Project raster with cubic convolution resampling
-      r.stk2 <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.str,
+      r.stk2 <- gdalwarp(srcfile = tmp1, dstfile = tmp2,
+                         t_srs = prj.crs,
                          r = "cubic", output_Raster = T)
       names(r.stk2) <- nw.nms
     }
     if (inherits(r.stk2, "Spatial")) {
       # Project points
-      r.stk2 <- spTransform(x = r.stk2, CRSobj = prj.str)
+      r.stk2 <- spTransform(x = r.stk2,
+                            CRSobj = prj.crs)
     }
   }
   return(r.stk2)
@@ -251,18 +258,16 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   require(rgdal)
   require(rgeos)
   require(raster)
+  prj.crs <- prj_str(utm_zone(sp.layer))
   if (buff != 0) {
     # Check projection of layer and project to measure distances
-    if (is.projected(sp.layer) == F) {
-      sp.layer <- spTransform(sp.layer, prj.str)
+    if (!is.projected(sp.layer)) {
+      sp.layer <- spTransform(sp.layer, prj.crs)
     }
     # Assign ownership of holes to parent polygons
     sp.comm <- createSPComment(sp.layer)
     # Create buffer of polygon for border effect
     sp.layer <- gBuffer(sp.comm, width = -buff)
-  }
-  if (is.projected(sp.layer)) {
-    # Reproject buffered layer to WGS84
     sp.layer <- spTransform(sp.layer, geo.str)
   }
   # Get on which srtm polygon the layer intersects
@@ -295,7 +300,7 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
     if (format != "raster"){
       # Return projected SpatialPoints
       msc.pnt <- rasterToPoints(msc, spatial = T)
-      msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
+      msc.p <- spTransform(msc.pnt, CRSobj = prj.crs)
       names(msc.p) <- "elev"
       return(msc.p)
     } else {
@@ -307,7 +312,7 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
       # Write temporary raster
       writeRaster(msc, filename = tmp1)
       # Project raster with cubic convolution resampling
-      msc.p <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.str,
+      msc.p <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.crs,
                         r = "cubic", output_Raster = T)
       names(msc.p) <- "elev"
       return(msc.p)
@@ -490,6 +495,15 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F,
     stop("at least one of the inputs isn't a SpatialPoints* object")
   }
   require(sp)
+  base.crs <- prj_str(utm_zone(base.pnts))
+  obs.crs <- prj_str(utm_zone(obs.pnts))
+  if (!identical(base.crs, obs.crs)) stop("spatial layers are in different UTM zones")
+  if (!is.projected(base.pnts)) {
+    base.pnts <- spTransform(base.pnts, base.crs)
+  }
+  if (!is.projected(obs.pnts)) {
+    obs.pnts <- spTransform(obs.pnts, obs.crs)
+  }
   require(MBA)
   base.map <- base.pnts
   # Creation of prediction grid from base points
@@ -687,9 +701,10 @@ grd_m <- function(sp.layer, dist = 10) {
     stop("sp.layer isn't a SpatialPolygons* object")
   }
   # If in WGS84 project to UTM
-  if (is.projected(sp.layer) == F) {
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
     library(rgdal)
-    sp.layer <- spTransform(sp.layer, prj.str)
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   require(sp)
   # Get bounding box
@@ -697,13 +712,11 @@ grd_m <- function(sp.layer, dist = 10) {
   # Calculate regularly spaced coordinates
   grd.1 <- expand.grid(x = seq(lyr.bb[1, 1], lyr.bb[1, 2], by = dist),
                        y = seq(lyr.bb[2, 1], lyr.bb[2, 2], by = dist))
-  # Get layer CRS
-  grd.crs <- CRS(proj4string(sp.layer))
   # Create SPDF from regular coordinates
-  grd.1 <- SpatialPointsDataFrame(grd.1, data = grd.1, proj4string = grd.crs)
+  grd.1 <- SpatialPointsDataFrame(grd.1, data = grd.1, proj4string = prj.crs)
   # Remove the ones outside the boundary
   grd.inp <- !is.na(over(grd.1, SpatialPolygons(sp.layer@polygons,
-                                                proj4string = grd.crs)))
+                                                proj4string = prj.crs)))
   grd.1 <- grd.1[grd.inp,]
   return(grd.1)
 }
@@ -717,12 +730,12 @@ mz_smth <- function(sp.layer, area = 2500) {
   # If the input is a raster convert to polygons and dissolve by zone
   if (inherits(sp.layer, "Raster")) {
     sp.layer <- rstr2pol(sp.layer)
-    # crs(sp.layer) <- prj.str
   }
   # If in WGS84 project to UTM
-  if (is.projected(sp.layer) == F) {
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
     library(rgdal)
-    sp.layer <- spTransform(sp.layer, prj.str)
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   # Check wether GRASS is running, else initialize
   if (nchar(Sys.getenv("GISRC")) == 0) {
@@ -748,7 +761,7 @@ mz_smth <- function(sp.layer, area = 2500) {
   zm.fnl <- readVECT(zm.gnrl)
   # If no CRS, define one
   if (is.na(zm.fnl@proj4string)) {
-    proj4string(zm.fnl) <- prj.str
+    proj4string(zm.fnl) <- prj.crs
   }
   # Remove 'cat' column from data.frame
   zm.fnl@data["cat"] <- NULL
@@ -799,13 +812,24 @@ geo_centroid <- function(sp.layer){
   if (!inherits(sp.layer, "Spatial")) {
     stop("sp.layer isn't a Spatial* object")
   }
+  lyr.crs <- CRS(proj4string(sp.layer))
+  # Get bbox corners
+  corners <- cbind(c(sp.layer@bbox[1], sp.layer@bbox[1],
+                     sp.layer@bbox[3], sp.layer@bbox[3]),
+                   c(sp.layer@bbox[2], sp.layer@bbox[4],
+                     sp.layer@bbox[4], sp.layer@bbox[2]))
+  pol.bb <- Polygon(corners)
+  pols.bb <- Polygons(list(pol.bb), "pol1")
+  sp.pol <- SpatialPolygons(list(pols.bb),
+                            proj4string = lyr.crs)
   # If in UTM project to WGS84
-  if (is.projected(sp.layer) == T) {
+  if (is.projected(sp.pol)) {
     library(rgdal)
-    sp.layer <- spTransform(sp.layer, geo.str)
+    sp.pol <- spTransform(sp.pol, geo.str)
   }
   require(rgeos)
-  coord <- gCentroid(sp.layer)@coords
+  gcent <- gCentroid(sp.pol)
+  coord <- gcent@coords
   names(coord) <- c("Lon", "Lat")
   coord <- coord[c(2, 1)]
   return(coord)
@@ -821,11 +845,17 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
     return(sp.layer)
   }
   sp.orig <- sp.layer
+  # If in WGS84 project to UTM
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.crs)
+  }
   # Remove NA's
   if (any(is.na(sp.layer@data[,vrbl]))) {
     sp.layer <- sp.layer[-which(is.na(sp.layer@data[,vrbl])),]
   }
-  # Identify neighbours points by Euclidean distance
+  # Identify neighbour points by Euclidean distance
   nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
   # Get number of neighbours in the neighbours list
   nb.crd <- card(nb.lst)
@@ -851,10 +881,8 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
     infl.xwx <- influence.measures(xwx.lm)[["is.inf"]]
     # Convert to numeric, 6 column matrix for computation of sums
     infl.mat <- matrix(as.numeric(infl.xwx), ncol = 6)
-    # Calculate moran scatterplot parameters
-    #mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
     # Get those rows where at least one index is TRUE
-    mp.out <- which(rowSums(infl.mat) != 0)
+    gm.out <- which(rowSums(infl.mat) != 0)
   }
   if (LM) {
     # Calculate local moran
@@ -869,12 +897,15 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
     # Get the unique rows to delete
     all.out <- unique(c(mp.out, lm.out))
   } else if(GM) {
-    all.out <- mp.out
+    all.out <- gm.out
   } else if(LM) {
     all.out <- lm.out
   }
   # Remove them from SPDF
   spl.noznb <- spl.noznb[-all.out, ]
+  if (!is.projected(sp.layer)) {
+    sp.noznb <- spTransform(sp.layer, geo.str)
+  }
   return(spl.noznb)
 }
 
@@ -885,6 +916,11 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   require(automap)
   require(MASS)
   require(gstat)
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.crs)
+  }
   vrbl.nm <- vrbl
   # Leave only positive observed values
   vrbl.spdt <- subset(sp.layer, eval(parse(text = vrbl.nm)) > 0)
@@ -1079,7 +1115,8 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
   veris.pnt <- SpatialPointsDataFrame(coords = veris[,c('Long','Lat')],
                                       proj4string = geo.str, 
                                       data = veris[,vrbl])
-  veris.pnt <- spTransform(veris.pnt, prj.str)
+  prj.crs <- prj_str(utm_zone(veris.pnt))
+  veris.pnt <- spTransform(veris.pnt, prj.crs)
   veris.pnt <- remove.duplicates(veris.pnt)
   rm(veris, veris.n)
   return(veris.pnt)
@@ -1094,9 +1131,9 @@ elev_import <- function(path = 'Elev') {
     elev <- SpatialPointsDataFrame(coords = elev.cnt, data = elev.df,
                                    proj4string = CRS(proj4string(elev)))
   }
-  
-  if (is.projected(elev) == F) {
-    elev <- spTransform(elev, prj.str)
+  prj.crs <- prj_str(utm_zone(elev))
+  if (!is.projected(elev)) {
+    elev <- spTransform(elev, prj.crs)
   }
   return(elev)
 }
@@ -1106,7 +1143,8 @@ soil_import <- function(path = 'Soil') {
                      header = TRUE, sep = "\t", skipNul = T)
   sp.soil <- SpatialPointsDataFrame(coords = soil.df[,c('Long', 'Lat')], 
                                  data = soil.df, proj4string = geo.str)
-  sp.soil <- spTransform(sp.soil, CRSobj = prj.str)
+  prj.crs <- prj_str(utm_zone(sp.soil))
+  sp.soil <- spTransform(sp.soil, CRSobj = prj.crs)
   writeOGR(sp.soil, overwrite_layer = T, dsn = "./Soil", driver = "ESRI Shapefile",
            layer = "soil")
   return(sp.soil)
@@ -1118,7 +1156,6 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   require(ggplot2)
   require(reshape2)
   require(gridExtra)
-  
   soil <- read_shp(paste0('Soil/', soil, '.shp'))
   proj4string(soil) <- proj4string(sp.layer)
   # Create buffer of 10 m
@@ -1241,6 +1278,11 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygons* object")
   }
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.crs)
+  }
   # Assignment of field boundary
   bound <- sp.layer
   # Extraction of bounding box
@@ -1300,7 +1342,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Creation of a rectangular grid of defined dimensions
   grd <- GridTopology(cell.offset, cell.size, c(nc, nr))
   # Conversion to spatial polygons
-  pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.str)
+  pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.crs)
   # Extraction of the IDs of all the polygons
   pol.lst <- list()
   for (a in seq_along(pol.1)) {
@@ -1311,12 +1353,12 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   row.names(data) <- unlist(pol.lst)
   # Adding the data frame to the polygons
   pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
-  proj4string(pol.2) <- prj.str
+  proj4string(pol.2) <- prj_str
   if (ang > 0) {
     # Rotation of the polygons by the defined angle
     pol.3 <- elide(pol.2, rotate = ang,
                    center = gCentroid(bound)@coords)
-    proj4string(pol.3) <- prj.str
+    proj4string(pol.3) <- prj.crs
   } else {
     pol.3 <- pol.2
   }
@@ -1325,7 +1367,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Creation of spatialpoints to join the attribute table with the clipped polygon
   pol.3.pnt <- SpatialPointsDataFrame(coordinates(pol.3),
                                       pol.3@data,
-                                      proj4string = prj.str)
+                                      proj4string = prj.crs)
   pol.3.pnt <- gBuffer(pol.3.pnt,
                        width = (min(cell.size) - 0.1) / 2,
                        byid = T)
@@ -1518,10 +1560,11 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   veris <- spTransform(veris, geo.str)
   veris$lat <- veris@coords[,2]
   veris$long <- veris@coords[,1]
-  veris <- spTransform(veris, prj.str)
+  prj.crs <- prj_str(utm_zone(veris))
+  veris <- spTransform(veris, prj.crs)
   # Load soil data
   soil <- read_shp('Soil/soil')
-  soil <- spTransform(soil, prj.str)
+  soil <- spTransform(soil, prj.crs)
   soil$lat <- soil@coords[,2]
   soil$long <- soil@coords[,1]
   soil@data$Muestra <- 1:dim(soil@data)[1]
@@ -1909,7 +1952,7 @@ r_rsmp <- function(r.layer, fact = 3) {
   return(rsmp.rstr)
 }
 
-Mode <- function(x, na.rm = FALSE) {
+Mode <- function(x, na.rm = T) {
   if(na.rm){
     x = x[!is.na(x)]
   }
@@ -1922,15 +1965,14 @@ utm_zone <- function(sp.layer) {
   if (!inherits(sp.layer, "Spatial")){
     stop("sp.layer isn't a Spatial* object")
   }
-  if (is.projected(sp.layer)) {
-    sp.layer <- spTransform(sp.layer, geo.str)
-  }
-  long <- mean(sp.layer@bbox[1,])
+  sp.cent <- geo_centroid(sp.layer)
+  long <- sp.cent[2]
+  names(long) <- NULL
   utm.zn <- (floor((long + 180) / 6) %% 60) + 1
   return(utm.zn)
 }
 
-save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
+save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
