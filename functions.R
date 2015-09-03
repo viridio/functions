@@ -351,7 +351,7 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 }
 
 #Rsaga DEM Covariates
-dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
+dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.rst = T) {
   if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
       !inherits(DEM.layer, "Raster")) {
     stop("DEM.layer isn't a SpatialPointsDataFrame or Raster* object")
@@ -377,39 +377,70 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
     }
     setwd(tmp.dir)
   }
-  base.lyr <- DEM.layer
   # Store dem layer CRS
-  lyr.crs <- CRS(proj4string(base.lyr))
+  lyr.crs <- CRS(proj4string(DEM.layer))
   # If layer is SPDF convert to raster
-  if (inherits(base.lyr, "SpatialPointsDataFrame")) {
-    base.rstr <- pnt2rstr(base.lyr, dem.attr)
+  if (inherits(DEM.layer, "SpatialPointsDataFrame")) {
+    base.rstr <- pnt2rstr(DEM.layer, dem.attr)
+    base.lyr <- DEM.layer
   } else {
-    base.rstr <- base.lyr
+    # Convert raster layer to points to add other layers
+    base.rstr <- DEM.layer
+    base.lyr <- rasterToPoints(DEM.layer, spatial = T)
+  }
+  if (smth) {
+    base.rstr <- focal(base.rstr, w = matrix(1, 3, 3),
+                       fun = mean, na.rm = T, pad = T)
   }
   dem.file <- "dem.tif"
   # Save raster as GeoTIFF
-  writeRaster(base.rstr, dem.file)
-  # Convert raster layer to points to add the layers
-  if (inherits(base.lyr, "Raster")) {
-    base.lyr <- rasterToPoints(base.lyr, spatial = T)
-  }
-  # Convert GeoTIFF to Saga Grid
-  rsaga.import.gdal(dem.file, show.output.on.console = F)
+  writeRaster(base.rstr, dem.file, options = c("COMPRESS=NONE"))
+  # All variables
+  full.vars <- c("Slope", "Aspect", "Curv", "Catch_area", "CTI",
+                 "Conv_Index", "LS_Factor", "SWI")
+  # Get list of derivatives to calculate
   if (length(deriv) > 1) {
     deriv.lst <- deriv
   } else {
     if (deriv == "all") {
-      deriv.lst <- c("Slope", "Aspect", "Curv", "Catch_area", "CTI",
-                     "Conv_Index", "LS_Factor", "SWI")
+      deriv.lst <- full.vars
     } else {
       deriv.lst <- deriv
     }
   }
-  if (length(grep("cti|slo|asp", deriv.lst, ignore.case = T)) > 0) {
-    # Calculate Slope and Aspect
+  # Convert GeoTIFF to Saga Grid
+  rsaga.import.gdal(dem.file, show.output.on.console = F)
+  # Pitremove the DEM
+  system("mpiexec -n 4 PitRemove -z dem.tif -fel pitrem.tif",
+         show.output.on.console = F)
+  if (length(grep("slo|cti|catch|fact", deriv.lst, ignore.case = T)) > 0) {
+    # DInf flow directions and slope
+    system("mpiexec -n 4 DinfFlowdir -fel pitrem.tif -ang ang.tif -slp Slope.tif",
+           show.output.on.console = F)
+    slp <- raster("Slope.tif")
+    slp <- slp + 0.00000001
+    writeRaster(slp, filename = "Slope.tif", options = c("COMPRESS=NONE"),
+                overwrite = T)
+    # Dinf contributing area
+    system("mpiexec -n 4 AreaDinf -nc -ang ang.tif -sca Catch_Area.tif",
+           show.output.on.console = F)
+    sca <- raster("Catch_Area.tif")
+    logsca <- log(sca)
+    writeRaster(logsca, filename = "Catch_Area.tif", options = c("COMPRESS=NONE"),
+                overwrite = T)
+    # Wetness Index
+    system("mpiexec -n 4 SlopeAreaRatio -slp Slope.tif -sca Catch_Area.tif -sar sar.tif",
+           show.output.on.console = F)
+    sar <- raster("sar.tif")
+    wi <- sar
+    wi[,] <- -log(sar[,])
+    writeRaster(wi, filename = "CTI.tif", options = c("COMPRESS=NONE"),
+                overwrite = T)
+  }
+  if (length(grep("asp", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Aspect
     rsaga.geoprocessor("ta_morphometry", module = 0,
                        param = list(ELEVATION = "dem.sgrd",
-                                    SLOPE = "Slope",
                                     ASPECT = "Aspect",
                                     METHOD = 1),
                        show.output.on.console = F)
@@ -419,24 +450,7 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
     rsaga.geoprocessor("ta_morphometry", module = 0,
                        param = list(ELEVATION = "dem.sgrd",
                                     CURV = "Curv",
-                                    HCURV = "PrCurv",
-                                    VCURV = "PlCurv",
                                     METHOD = 5),
-                       show.output.on.console = F)
-  }
-  if (length(grep("cti|catch", deriv.lst, ignore.case = T)) > 0) {
-    # Calculate Catchment Area
-    rsaga.geoprocessor("ta_hydrology", module = 18,
-                       param = list(DEM = "dem.sgrd",
-                                    AREA = "Catch_Area"),
-                       show.output.on.console = F)
-  }
-  if (length(grep("cti", deriv.lst, ignore.case = T)) > 0) {
-    # Calculate CTI
-    rsaga.geoprocessor("ta_hydrology", module = 20,
-                       param = list(SLOPE = "Slope.sgrd",
-                                    AREA = "Catch_Area.sgrd",
-                                    TWI = "CTI"),
                        show.output.on.console = F)
   }
   if (length(grep("conv", deriv.lst, ignore.case = T)) > 0) {
@@ -448,6 +462,9 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
   }
   if (length(grep("ls|fac", deriv.lst, ignore.case = T)) > 0) {
     # Calculate LS Factor
+    # Convert GeoTIFF to Saga Grid
+    rsaga.import.gdal("Catch_Area.tif", show.output.on.console = F)
+    rsaga.import.gdal("Slope.tif", show.output.on.console = F)
     rsaga.geoprocessor("ta_hydrology", module = 22,
                        param = list(SLOPE = "Slope.sgrd",
                                     AREA = "Catch_Area.sgrd",
@@ -460,25 +477,26 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", save.rst = T) {
     rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
                         show.output.on.console = F)
   }
-  # List all grid files created
-  sgrd.lst <- paste0(deriv.lst, ".sgrd")
+  gen.deriv <- grep(paste(deriv, collapse = "|"), full.vars,
+                    ignore.case = T, value = T)
   # Iterate over list of grids
-  for (a in sgrd.lst) {
+  base.lyr@data[dem.attr] <- extract(base.rstr, base.lyr)
+  for (a in gen.deriv) {
     # Get name for tiff
-    tif.name <- paste0(sub(".sgrd", "", a), ".tif")
-    # Convert Saga grid to GeoTIFF
-    rsaga.geoprocessor("io_gdal", module = 2,
-                       param = list(GRIDS = a,
-                                    FILE = tif.name),
-                       show.output.on.console = F)
+    tif.name <- paste0(a, ".tif")
+    if (file.exists(paste0(a, ".sgrd"))) {
+      # Convert Saga grid to GeoTIFF
+      rsaga.geoprocessor("io_gdal", module = 2,
+                         param = list(GRIDS = paste0(a, ".sgrd"),
+                                      FILE = tif.name),
+                         show.output.on.console = F)
+    }
     # Open tiff as RasterLayer
     terr.tif <- raster(tif.name)
     # Get data from the tiff that intersects with points
-    terr.data <- extract(terr.tif, base.lyr)
-    # Get name for column in attribute table
-    attr.name <- sub(".sgrd", "", a)
+    terr.data <- extract(terr.tif, base.lyr, method = "bilinear")
     # Add column to SPDF
-    base.lyr@data[attr.name] <- terr.data
+    base.lyr@data[a] <- terr.data
   }
   if (any(is.na(base.lyr@data))) {
     base.lyr@data <- df_impute(base.lyr@data)
@@ -1902,17 +1920,12 @@ df_impute <- function(dt.frm, n.neig = 2) {
     # For each index do...
     for (ln in na.lns) {
       # Get index of neighbors
-      if (ln - n.neig < 0) {
-        mn.lns <- (ln + 1):(ln + n.neig)
-      } else if (ln + n.neig > length(cl.df)) {
-        mn.lns <- (ln - n.neig):(ln - 1)
-      } else {
-        mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
-        # If NAs in neighbors increase number of neighbors
-        if (any(is.na(cl.df[mn.lns]))) {
-          n.neig <- n.neig + 1
-          mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
-        }
+      mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
+      mn.lns <- mn.lns[mn.lns >= 1 & mn.lns <= length(cl.df)]
+      # If NAs in neighbors increase number of neighbors
+      if (any(is.na(cl.df[mn.lns]))) {
+        mn.lns <- ((ln - (n.neig + 1)):(ln + (n.neig + 1)))[-(n.neig + 1 + 1)]
+        mn.lns <- mn.lns[mn.lns >= 1 & mn.lns <= length(cl.df)]
       }
       # Compute mean
       if (is.character(cl.df)) {
@@ -1923,7 +1936,6 @@ df_impute <- function(dt.frm, n.neig = 2) {
       }
       # Replace value
       dt.frm[ln, cl] <- imp.mn
-      n.neig <- def.neigh
     }
   }
   return(dt.frm)
