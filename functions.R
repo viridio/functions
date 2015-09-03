@@ -374,6 +374,8 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
     if (dir.exists(tmp.dir)) {
       unlink(tmp.dir, recursive = T, force = T)
       dir.create(tmp.dir)
+    } else {
+      dir.create(tmp.dir)
     }
     setwd(tmp.dir)
   }
