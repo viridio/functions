@@ -438,19 +438,13 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
   }
   if (length(grep("asp", deriv.lst, ignore.case = T)) > 0) {
     # Calculate Aspect
-    rsaga.geoprocessor("ta_morphometry", module = 0,
-                       param = list(ELEVATION = "dem.sgrd",
-                                    ASPECT = "Aspect",
-                                    METHOD = 1),
-                       show.output.on.console = F)
+    rsaga.aspect("dem.sgrd", "Aspect", method = 1,
+                 show.output.on.console = F)
   }
   if (length(grep("curv", deriv.lst, ignore.case = T)) > 0) {
     # Calculate Curvatures
-    rsaga.geoprocessor("ta_morphometry", module = 0,
-                       param = list(ELEVATION = "dem.sgrd",
-                                    CURV = "Curv",
-                                    METHOD = 5),
-                       show.output.on.console = F)
+    rsaga.curvature("dem.sgrd", "Curv", method = 5,
+                    show.output.on.console = F)
   }
   if (length(grep("conv", deriv.lst, ignore.case = T)) > 0) {
     # Calculate Convergence Index
@@ -461,14 +455,9 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
   }
   if (length(grep("ls|fac", deriv.lst, ignore.case = T)) > 0) {
     # Calculate LS Factor
-    # Convert GeoTIFF to Saga Grid
-    rsaga.import.gdal("Catch_Area.tif", show.output.on.console = F)
-    rsaga.import.gdal("Slope.tif", show.output.on.console = F)
-    rsaga.geoprocessor("ta_hydrology", module = 22,
-                       param = list(SLOPE = "Slope.sgrd",
-                                    AREA = "Catch_Area.sgrd",
-                                    LS = "LS_Factor",
-                                    METHOD = 2),
+    rsaga.geoprocessor("ta_hydrology", module = 25,
+                       param = list(DEM = "dem.sgrd",
+                                    LS_FACTOR = "LS_Factor"),
                        show.output.on.console = F)
   }
   if (length(grep("swi|saga", deriv.lst, ignore.case = T)) > 0) {
@@ -476,7 +465,7 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
     rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
                         show.output.on.console = F)
   }
-  gen.deriv <- grep(paste(deriv, collapse = "|"), full.vars,
+  gen.deriv <- grep(paste(deriv.lst, collapse = "|"), full.vars,
                     ignore.case = T, value = T)
   # Iterate over list of grids
   base.lyr@data[dem.attr] <- extract(base.rstr, base.lyr)
