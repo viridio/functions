@@ -329,7 +329,8 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
 }
 
 #Function to reclassify a raster in n classes by jenks
-rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
+rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
+                      style = "fisher") {
   if (!inherits(raster.lyr, "Raster")){
     stop("Input object isn't a Raster* object")
   }
@@ -426,10 +427,6 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
     # Dinf contributing area
     system("mpiexec -n 4 AreaDinf -nc -ang ang.tif -sca Catch_Area.tif",
            show.output.on.console = F)
-    sca <- raster("Catch_Area.tif")
-    logsca <- log(sca)
-    writeRaster(logsca, filename = "Catch_Area.tif", options = c("COMPRESS=NONE"),
-                overwrite = T)
     # Wetness Index
     system("mpiexec -n 4 SlopeAreaRatio -slp Slope.tif -sca Catch_Area.tif -sar sar.tif",
            show.output.on.console = F)
