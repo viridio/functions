@@ -438,12 +438,12 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
   }
   if (length(grep("asp", deriv.lst, ignore.case = T)) > 0) {
     # Calculate Aspect
-    rsaga.aspect("dem.sgrd", "Aspect", method = 1,
+    rsaga.aspect("dem.sgrd", "Aspect", method = "maxtriangleslope",
                  show.output.on.console = F)
   }
   if (length(grep("curv", deriv.lst, ignore.case = T)) > 0) {
     # Calculate Curvatures
-    rsaga.curvature("dem.sgrd", "Curv", method = 5,
+    rsaga.curvature("dem.sgrd", "Curv", method = "poly2zevenbergen",
                     show.output.on.console = F)
   }
   if (length(grep("conv", deriv.lst, ignore.case = T)) > 0) {
@@ -1276,7 +1276,8 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   return(LMs)  
 }
 
-trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) {
+trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
+                     n.pas = 1, random = T) {
   require(rgdal)
   require(rgeos)
   require(maptools)
@@ -1301,12 +1302,16 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   nc <- round(lon.rng / cell.size[1], 0) + 50
   nr <- round(lat.rng / cell.size[2], 0) + 50
   # Assignment of number of treatments
-  ntrat <- num.trat
+  ntrat <- n.trat
   # Creation of the vector of treatments
   trt.ordr <- vector()
   for (b in 1:ceiling(nc / ntrat)) {
-    rndm <- sample(ntrat, ntrat)
-    trt.ordr <- c(trt.ordr, rndm)
+    if (random) {
+      trt <- sample(ntrat, ntrat)
+    } else {
+      trt <- 1:ntrat
+    }
+    trt.ordr <- c(trt.ordr, trt)
   }
   pas.ordr <- vector()
   for (f in trt.ordr) {
