@@ -1333,6 +1333,13 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   }
   col.t <- t(col.mat)
   col.v <- as.vector(col.t)
+  # Creation of row identifiers
+  row.mat <- mat
+  for (i in 1:ncol(mat)) {
+    row.mat[, i] <- 1:nrow(mat)
+  }
+  row.t <- t(row.mat)
+  row.v <- as.vector(row.t)
   # Creation of the vector of replications
   rep.ordr <- vector()
   for (f in 1:ceiling(nc / ntrat)) {
@@ -1360,7 +1367,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
     pol.lst[a] <- slot(pol.1[a,]@polygons[[1]], "ID") 
   }
   # Creation of the data frame of the polygons
-  data <- data.frame(Col = col.v, Trat = trt.v, Rep = rep.v)
+  data <- data.frame(Col = col.v, Row = row.v, Trat = trt.v, Rep = rep.v)
   row.names(data) <- unlist(pol.lst)
   # Adding the data frame to the polygons
   pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
