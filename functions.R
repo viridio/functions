@@ -596,10 +596,11 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F,
 }
 
 # plant population response by hybrid
-hyb_pp <- function(hybrid, exp.yld, step = 1235) {
+hyb_pp <- function(hybrid, exp.yld, step = 1235, biol = F) {
   num.param <- as.numeric(hyb.param[1:8, hybrid])
+  num.param2 <- as.numeric(hyb.param[9:11, hybrid])
   pl.pop <- vector()
-  min.kn.yld <- 7
+  min.kn.yld <- 3.5
   if (hyb.param[9, hybrid] == "L") {
     seed.rates <- seq(30000, 150000, step)
     for (a in seq_along(exp.yld)) {
@@ -612,29 +613,41 @@ hyb_pp <- function(hybrid, exp.yld, step = 1235) {
     }
     return(pl.pop)
   } else {
-    pp.min <- 35000
+    pp.min <- 30000
     pp.kn <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
                  (num.param[5] * min.kn.yld - num.param[5] * num.param[8]) -
                  2 * num.param[6] * num.param[7] * (num.param[8] - min.kn.yld)) /
                 (2 * num.param[3] + 2 * num.param[6] * (min.kn.yld - num.param[8]))) * 10000
-    seed.rates <- seq(35000 + step, 150000, step)
+    if (!biol) {
+      pp.kn <- pp.kn * ((100 - (num.param2[1] * min.kn.yld * min.kn.yld + num.param2[2] *
+                                  min.kn.yld + num.param2[3]))/100)
+    }
+    seed.rates <- seq(pp.min + step, 150000, step)
     pp.lm <- lm(y ~ x, data = data.frame(x = c(3, min.kn.yld), y = c(pp.min, pp.kn)))
     for (a in seq_along(exp.yld)) {
       if (exp.yld[a] < 3) {
         hyb.pp <- pp.min
+        hyb.corr <- hyb.pp
       }
       if (exp.yld[a] >= 3 & exp.yld[a] < min.kn.yld) {
         hyb.pp <- predict(pp.lm, newdata = data.frame(x = exp.yld[a]))
         hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+        hyb.corr <- hyb.pp
       }
       if (exp.yld[a] >= min.kn.yld) {
         hyb.pp <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
                       (num.param[5] * exp.yld[a] - num.param[5] * num.param[8]) -
                       2 * num.param[6] * num.param[7] * (num.param[8] - exp.yld[a])) /
                      (2 * num.param[3] + 2 * num.param[6] * (exp.yld[a] - num.param[8]))) * 10000
-        hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+        if (!biol) {
+          hyb.corr <- hyb.pp * ((100 - (num.param2[1] * exp.yld[a] * exp.yld[a] + num.param2[2] *
+                                          exp.yld[a] + num.param2[3]))/100)
+        } else {
+          hyb.corr <- hyb.pp
+        }
+        hyb.corr <- seed.rates[which(abs(seed.rates - hyb.corr) == min(abs(seed.rates - hyb.corr)))]
       }
-      pl.pop[a] <- hyb.pp
+      pl.pop[a] <- hyb.corr
     }
     return(pl.pop)
   }
