@@ -1,6 +1,10 @@
 load(file = "~/SIG/Geo_util/Functions.RData")
 
-prj.str <- CRS("+proj=utm +zone=20 +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+prj_str <- function(zone) {
+  zn.str <- paste0("+proj=utm +zone=", zone,
+                   " +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+  return(CRS(zn.str))
+}
 
 geo.str <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
 
@@ -115,8 +119,9 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
                                vindx, "_Landsat/"),
                         ".tif$", full.names = T)
   # Check projection of layer and project to measure distances
-  if (is.projected(sp.layer) == F) {
-    sp.layer <- spTransform(sp.layer, prj.str)
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   # Assign ownership of holes to parent polygons
   sp.comm <- createSPComment(sp.layer)
@@ -209,7 +214,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
   }
   # Get brick name and create new ones
   nms <- names(r.stk2)
-  nw.nms <- gsub("^", "EVI", substr(nms, 10, 13))
+  nw.nms <- gsub("^", vindx, substr(nms, 10, 13))
   # Convert to SpatialPointsDF
   r.stk2 <- rasterToPoints(r.stk2, spatial = T)
   names(r.stk2) <- nw.nms
@@ -230,13 +235,15 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
       # Write temporary raster
       writeRaster(r.stk2, filename = tmp1)
       # Project raster with cubic convolution resampling
-      r.stk2 <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.str,
+      r.stk2 <- gdalwarp(srcfile = tmp1, dstfile = tmp2,
+                         t_srs = prj.crs,
                          r = "cubic", output_Raster = T)
       names(r.stk2) <- nw.nms
     }
     if (inherits(r.stk2, "Spatial")) {
       # Project points
-      r.stk2 <- spTransform(x = r.stk2, CRSobj = prj.str)
+      r.stk2 <- spTransform(x = r.stk2,
+                            CRSobj = prj.crs)
     }
   }
   return(r.stk2)
@@ -251,18 +258,16 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   require(rgdal)
   require(rgeos)
   require(raster)
+  prj.crs <- prj_str(utm_zone(sp.layer))
   if (buff != 0) {
     # Check projection of layer and project to measure distances
-    if (is.projected(sp.layer) == F) {
-      sp.layer <- spTransform(sp.layer, prj.str)
+    if (!is.projected(sp.layer)) {
+      sp.layer <- spTransform(sp.layer, prj.crs)
     }
     # Assign ownership of holes to parent polygons
     sp.comm <- createSPComment(sp.layer)
     # Create buffer of polygon for border effect
     sp.layer <- gBuffer(sp.comm, width = -buff)
-  }
-  if (is.projected(sp.layer)) {
-    # Reproject buffered layer to WGS84
     sp.layer <- spTransform(sp.layer, geo.str)
   }
   # Get on which srtm polygon the layer intersects
@@ -293,11 +298,13 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   }
   if (proj.obj) {
     if (format != "raster"){
+      # Return projected SpatialPoints
       msc.pnt <- rasterToPoints(msc, spatial = T)
-      msc.p <- spTransform(msc.pnt, CRSobj = prj.str)
+      msc.p <- spTransform(msc.pnt, CRSobj = prj.crs)
       names(msc.p) <- "elev"
       return(msc.p)
     } else {
+      # Return projected Raster
       require(gdalUtils)
       # Generate temp file names
       tmp1 <- tempfile(fileext = ".tif")
@@ -305,25 +312,27 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
       # Write temporary raster
       writeRaster(msc, filename = tmp1)
       # Project raster with cubic convolution resampling
-      msc.p <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.str,
+      msc.p <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.crs,
                         r = "cubic", output_Raster = T)
       names(msc.p) <- "elev"
       return(msc.p)
     }
   }
   if (format != "raster") {
+    # Return SpatialPoints in Lat-Lon
     msc.pnt <- rasterToPoints(msc, spatial = T)
-    names(msc.p) <- "elev"
-    return(msc.p)
+    names(msc.pnt) <- "elev"
+    return(msc.pnt)
   }
   # Return raster in Lat-Lon
   return(msc)
 }
 
 #Function to reclassify a raster in n classes by jenks
-rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
-  if (!inherits(raster.lyr, "RasterLayer")){
-    stop("Input object isn't a RasterLayer object")
+rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
+                      style = "fisher") {
+  if (!inherits(raster.lyr, "Raster")){
+    stop("Input object isn't a Raster* object")
   }
   if (n.class != length(val)) {
     stop("Number of classes doesn't match number of values")
@@ -343,117 +352,164 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:3, style = "fisher") {
 }
 
 #Rsaga DEM Covariates
-dem_cov <- function(DEM.layer, dem.attr = "DEM") {
+dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.rst = T) {
   if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
-      !inherits(DEM.layer, "RasterLayer")) {
-    stop("DEM.layer isn't a SpatialPointsDataFrame or RasterLayer object")
+      !inherits(DEM.layer, "Raster")) {
+    stop("DEM.layer isn't a SpatialPointsDataFrame or Raster* object")
   }
   require(sp)
   require(RSAGA)
   require(raster)
-  if ("./DEM_derivates" %in% list.dirs()) {
-    unlink("./DEM_derivates", recursive = T, force = T)
-  }
-  # Topography derivates folder creation
-  dir.create("DEM_derivates")
   # Save current directory
   curr.wd <- getwd()
   on.exit(setwd(curr.wd))
-  setwd("./DEM_derivates")
-  base.lyr <- DEM.layer
-  # Store dem layer CRS
-  lyr.crs <- CRS(proj4string(base.lyr))
-  # If layer is SPDF convert to raster
-  if (inherits(base.lyr, "SpatialPointsDataFrame")) {
-    base.rstr <- pnt2rstr(base.lyr, dem.attr)
+  if (save.rst) {
+    if ("./DEM_derivates" %in% list.dirs()) {
+      unlink("./DEM_derivates", recursive = T, force = T)
+    }
+    # Topography derivates folder creation
+    dir.create("DEM_derivates")
+    setwd("./DEM_derivates")
   } else {
-    base.rstr <- base.lyr
+    tmp.dir <- paste0(tempdir(), "\\DEM_derivates")
+    if (dir.exists(tmp.dir)) {
+      unlink(tmp.dir, recursive = T, force = T)
+      dir.create(tmp.dir)
+    } else {
+      dir.create(tmp.dir)
+    }
+    setwd(tmp.dir)
+  }
+  # Store dem layer CRS
+  lyr.crs <- CRS(proj4string(DEM.layer))
+  # If layer is SPDF convert to raster
+  if (inherits(DEM.layer, "SpatialPointsDataFrame")) {
+    base.rstr <- pnt2rstr(DEM.layer, dem.attr)
+    base.lyr <- DEM.layer
+  } else {
+    # Convert raster layer to points to add other layers
+    base.rstr <- DEM.layer
+    base.lyr <- rasterToPoints(DEM.layer, spatial = T)
+  }
+  if (smth) {
+    base.rstr <- focal(base.rstr, w = matrix(1, 3, 3),
+                       fun = mean, na.rm = T, pad = T)
   }
   dem.file <- "dem.tif"
   # Save raster as GeoTIFF
-  writeRaster(base.rstr, dem.file)
-  # Convert raster layer to points to add the layers
-  if (inherits(base.lyr, "RasterLayer")) {
-    base.lyr <- rasterToPoints(base.lyr, spatial = T)
+  writeRaster(base.rstr, dem.file, options = c("COMPRESS=NONE"))
+  # All variables
+  full.vars <- c("Slope", "Aspect", "Curv", "Catch_area", "CTI",
+                 "Conv_Index", "LS_Factor", "SWI")
+  # Get list of derivatives to calculate
+  if (length(deriv) > 1) {
+    deriv.lst <- deriv
+  } else {
+    if (deriv == "all") {
+      deriv.lst <- full.vars
+    } else {
+      deriv.lst <- deriv
+    }
   }
   # Convert GeoTIFF to Saga Grid
   rsaga.import.gdal(dem.file, show.output.on.console = F)
-  # Calculate Slope and Aspect
-  rsaga.geoprocessor("ta_morphometry", module = 0,
-                     param = list(ELEVATION = "dem.sgrd",
-                                  SLOPE = "Slope",
-                                  ASPECT = "Aspect",
-                                  METHOD = 1),
-                     show.output.on.console = F)
-  # Calculate Curvatures
-  rsaga.geoprocessor("ta_morphometry", module = 0,
-                     param = list(ELEVATION = "dem.sgrd",
-                                  CURV = "Curv",
-                                  HCURV = "PrCurv",
-                                  VCURV = "PlCurv",
-                                  METHOD = 5),
-                     show.output.on.console = F)
-  # Calculate Catchment Area
-  rsaga.geoprocessor("ta_hydrology", module = 18,
-                     param = list(DEM = "dem.sgrd",
-                                  AREA = "Catch_Area"),
-                     show.output.on.console = F)
-  # Calculate CTI
-  rsaga.geoprocessor("ta_hydrology", module = 20,
-                     param = list(SLOPE = "Slope.sgrd",
-                                  AREA = "Catch_Area.sgrd",
-                                  TWI = "CTI"),
-                     show.output.on.console = F)
-  # Calculate Convergence Index
-  rsaga.geoprocessor("ta_morphometry", module = 1,
-                     param = list(ELEVATION = "dem.sgrd",
-                                  RESULT = "Conv_Index"),
-                     show.output.on.console = F)
-  # Calculate LS Factor
-  rsaga.geoprocessor("ta_hydrology", module = 22,
-                     param = list(SLOPE = "Slope.sgrd",
-                                  AREA = "Catch_Area.sgrd",
-                                  LS = "LS_Factor",
-                                  METHOD = 2),
-                     show.output.on.console = F)
-  # Calculate Saga Wetness Index
-  rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
-                      show.output.on.console = F)
-  # List all grid files created
-  sgrd.lst <- list.files(".", pattern = ".sgrd$")
-  sgrd.lst <- sgrd.lst[!(sgrd.lst %in% "dem.sgrd")]
-  # Iterate over list of grids
-  for (a in sgrd.lst) {
-    # Get name for tiff
-    tif.name <- paste0(sub(".sgrd", "", a), ".tif")
-    # Convert Saga grid to GeoTIFF
-    rsaga.geoprocessor("io_gdal", module = 2,
-                       param = list(GRIDS = a,
-                                    FILE = tif.name),
+  # Pitremove the DEM
+  system("mpiexec -n 4 PitRemove -z dem.tif -fel pitrem.tif",
+         show.output.on.console = F)
+  if (length(grep("slo|cti|catch|fact", deriv.lst, ignore.case = T)) > 0) {
+    # DInf flow directions and slope
+    system("mpiexec -n 4 DinfFlowdir -fel pitrem.tif -ang ang.tif -slp Slope.tif",
+           show.output.on.console = F)
+    slp <- raster("Slope.tif")
+    slp <- slp + 0.00000001
+    writeRaster(slp, filename = "Slope.tif", options = c("COMPRESS=NONE"),
+                overwrite = T)
+    # Dinf contributing area
+    system("mpiexec -n 4 AreaDinf -nc -ang ang.tif -sca Catch_Area.tif",
+           show.output.on.console = F)
+    # Wetness Index
+    system("mpiexec -n 4 SlopeAreaRatio -slp Slope.tif -sca Catch_Area.tif -sar sar.tif",
+           show.output.on.console = F)
+    sar <- raster("sar.tif")
+    wi <- sar
+    wi[,] <- -log(sar[,])
+    writeRaster(wi, filename = "CTI.tif", options = c("COMPRESS=NONE"),
+                overwrite = T)
+  }
+  if (length(grep("asp", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Aspect
+    rsaga.aspect("dem.sgrd", "Aspect", method = "maxtriangleslope",
+                 show.output.on.console = F)
+  }
+  if (length(grep("curv", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Curvatures
+    rsaga.curvature("dem.sgrd", "Curv", method = "poly2zevenbergen",
+                    show.output.on.console = F)
+  }
+  if (length(grep("conv", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Convergence Index
+    rsaga.geoprocessor("ta_morphometry", module = 1,
+                       param = list(ELEVATION = "dem.sgrd",
+                                    RESULT = "Conv_Index"),
                        show.output.on.console = F)
+  }
+  if (length(grep("ls|fac", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate LS Factor
+    rsaga.geoprocessor("ta_hydrology", module = 25,
+                       param = list(DEM = "dem.sgrd",
+                                    LS_FACTOR = "LS_Factor"),
+                       show.output.on.console = F)
+  }
+  if (length(grep("swi|saga", deriv.lst, ignore.case = T)) > 0) {
+    # Calculate Saga Wetness Index
+    rsaga.wetness.index("dem.sgrd", "SWI.sgrd",
+                        show.output.on.console = F)
+  }
+  gen.deriv <- grep(paste(deriv.lst, collapse = "|"), full.vars,
+                    ignore.case = T, value = T)
+  # Iterate over list of grids
+  base.lyr@data[dem.attr] <- extract(base.rstr, base.lyr)
+  for (a in gen.deriv) {
+    # Get name for tiff
+    tif.name <- paste0(a, ".tif")
+    if (file.exists(paste0(a, ".sgrd"))) {
+      # Convert Saga grid to GeoTIFF
+      rsaga.geoprocessor("io_gdal", module = 2,
+                         param = list(GRIDS = paste0(a, ".sgrd"),
+                                      FILE = tif.name),
+                         show.output.on.console = F)
+    }
     # Open tiff as RasterLayer
     terr.tif <- raster(tif.name)
     # Get data from the tiff that intersects with points
-    terr.data <- extract(terr.tif, base.lyr)
-    # Get name for column in attribute table
-    attr.name <- sub(".sgrd", "", a)
+    terr.data <- extract(terr.tif, base.lyr, method = "bilinear")
     # Add column to SPDF
-    base.lyr@data[attr.name] <- terr.data
+    base.lyr@data[a] <- terr.data
   }
   if (any(is.na(base.lyr@data))) {
-    require(DMwR)
-    base.lyr@data <- knnImputation(base.lyr@data)
+    base.lyr@data <- df_impute(base.lyr@data)
   }
+  file.remove(list.files(path = ".", pattern = "sdat|sgrd|mgrd|prj"))
   return(base.lyr)
 }
 
 # Defining the MBA interpolation function
-int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, krig = F) {
+int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F,
+                   dist = 20, clean = T, krig = F) {
   if (!inherits(base.pnts, "SpatialPoints") |
       !inherits(obs.pnts, "SpatialPointsDataFrame")) {
     stop("at least one of the inputs isn't a SpatialPoints* object")
   }
   require(sp)
+  base.crs <- prj_str(utm_zone(base.pnts))
+  obs.crs <- prj_str(utm_zone(obs.pnts))
+  if (!identical(base.crs, obs.crs)) stop("spatial layers are in different UTM zones")
+  if (!is.projected(base.pnts)) {
+    base.pnts <- spTransform(base.pnts, base.crs)
+  }
+  if (!is.projected(obs.pnts)) {
+    obs.pnts <- spTransform(obs.pnts, obs.crs)
+  }
   require(MBA)
   base.map <- base.pnts
   # Creation of prediction grid from base points
@@ -494,7 +550,7 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, k
       if (class(vg.fit)[1] != "try-error") {
         # Krig with fitted lambda
         vrbl.krig <- krige((vrbl.data ^ vg.fit[[1]]) ~ 1, locations = obs.vrbl,
-                           newdata = base.map, model = vg.fit[[3]])
+                           nmax = 100, newdata = base.map, model = vg.fit[[3]])
         # Reverse conversion with lambda to obtain original units
         vrbl.krig@data[, 1] <- vrbl.krig@data[, 1] ^ (1 / vg.fit[[1]])
         # Add data to layer
@@ -540,10 +596,11 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F, dist = 20, clean = T, k
 }
 
 # plant population response by hybrid
-hyb_pp <- function(hybrid, exp.yld, step = 1235) {
+hyb_pp <- function(hybrid, exp.yld, step = 1235, biol = F) {
   num.param <- as.numeric(hyb.param[1:8, hybrid])
+  num.param2 <- as.numeric(hyb.param[9:11, hybrid])
   pl.pop <- vector()
-  min.kn.yld <- 7
+  min.kn.yld <- 3.5
   if (hyb.param[9, hybrid] == "L") {
     seed.rates <- seq(30000, 150000, step)
     for (a in seq_along(exp.yld)) {
@@ -556,29 +613,41 @@ hyb_pp <- function(hybrid, exp.yld, step = 1235) {
     }
     return(pl.pop)
   } else {
-    pp.min <- 35000
+    pp.min <- 30000
     pp.kn <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
                  (num.param[5] * min.kn.yld - num.param[5] * num.param[8]) -
                  2 * num.param[6] * num.param[7] * (num.param[8] - min.kn.yld)) /
                 (2 * num.param[3] + 2 * num.param[6] * (min.kn.yld - num.param[8]))) * 10000
-    seed.rates <- seq(35000 + step, 150000, step)
+    if (!biol) {
+      pp.kn <- pp.kn * ((100 - (num.param2[1] * min.kn.yld * min.kn.yld + num.param2[2] *
+                                  min.kn.yld + num.param2[3]))/100)
+    }
+    seed.rates <- seq(pp.min + step, 150000, step)
     pp.lm <- lm(y ~ x, data = data.frame(x = c(3, min.kn.yld), y = c(pp.min, pp.kn)))
     for (a in seq_along(exp.yld)) {
       if (exp.yld[a] < 3) {
         hyb.pp <- pp.min
+        hyb.corr <- hyb.pp
       }
       if (exp.yld[a] >= 3 & exp.yld[a] < min.kn.yld) {
         hyb.pp <- predict(pp.lm, newdata = data.frame(x = exp.yld[a]))
         hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+        hyb.corr <- hyb.pp
       }
       if (exp.yld[a] >= min.kn.yld) {
         hyb.pp <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
                       (num.param[5] * exp.yld[a] - num.param[5] * num.param[8]) -
                       2 * num.param[6] * num.param[7] * (num.param[8] - exp.yld[a])) /
                      (2 * num.param[3] + 2 * num.param[6] * (exp.yld[a] - num.param[8]))) * 10000
-        hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
+        if (!biol) {
+          hyb.corr <- hyb.pp * ((100 - (num.param2[1] * exp.yld[a] * exp.yld[a] + num.param2[2] *
+                                          exp.yld[a] + num.param2[3]))/100)
+        } else {
+          hyb.corr <- hyb.pp
+        }
+        hyb.corr <- seed.rates[which(abs(seed.rates - hyb.corr) == min(abs(seed.rates - hyb.corr)))]
       }
-      pl.pop[a] <- hyb.pp
+      pl.pop[a] <- hyb.corr
     }
     return(pl.pop)
   }
@@ -593,9 +662,8 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
   # If one wants the NAs can be filled
   if (fill) {
     if (any(is.na(sp.layer@data))) {
-      require(DMwR)
-      # Impute de missing data
-      sp.layer@data <- knnImputation(sp.layer@data)
+      # Impute missing data
+      sp.layer@data <- df_impute(sp.layer@data)
     }
   }
   # If the results are needed in polygon
@@ -633,7 +701,8 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
     usd.var <- names(sp.layer)
   }
   # Create column with specific hybrid
-  sp.poly@data <- data.frame(Hybrid = rep(hybrid, nrow(sp.poly@data)))
+  sp.poly@data <- data.frame(Hybrid = rep(hybrid, nrow(sp.poly@data)),
+                             stringsAsFactors = F)
   # Create expected yield column with prediction
   sp.poly@data["Exp_Yld"] <- predict(pred.model, sp.layer@data[usd.var],
                                      quantiles = quantile)
@@ -651,9 +720,10 @@ grd_m <- function(sp.layer, dist = 10) {
     stop("sp.layer isn't a SpatialPolygons* object")
   }
   # If in WGS84 project to UTM
-  if (is.projected(sp.layer) == F) {
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
     library(rgdal)
-    sp.layer <- spTransform(sp.layer, prj.str)
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   require(sp)
   # Get bounding box
@@ -661,32 +731,30 @@ grd_m <- function(sp.layer, dist = 10) {
   # Calculate regularly spaced coordinates
   grd.1 <- expand.grid(x = seq(lyr.bb[1, 1], lyr.bb[1, 2], by = dist),
                        y = seq(lyr.bb[2, 1], lyr.bb[2, 2], by = dist))
-  # Get layer CRS
-  grd.crs <- CRS(proj4string(sp.layer))
   # Create SPDF from regular coordinates
-  grd.1 <- SpatialPointsDataFrame(grd.1, data = grd.1, proj4string = grd.crs)
+  grd.1 <- SpatialPointsDataFrame(grd.1, data = grd.1, proj4string = prj.crs)
   # Remove the ones outside the boundary
   grd.inp <- !is.na(over(grd.1, SpatialPolygons(sp.layer@polygons,
-                                                proj4string = grd.crs)))
+                                                proj4string = prj.crs)))
   grd.1 <- grd.1[grd.inp,]
   return(grd.1)
 }
 
 mz_smth <- function(sp.layer, area = 2500) {
-  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "RasterLayer")) {
-    stop("sp.layer isn't a SpatialPolygons* or RasterLayer object")
+  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "Raster")) {
+    stop("sp.layer isn't a SpatialPolygons* or Raster* object")
   }
   require(rgrass7)
   require(raster)
   # If the input is a raster convert to polygons and dissolve by zone
-  if (inherits(sp.layer, "RasterLayer")) {
+  if (inherits(sp.layer, "Raster")) {
     sp.layer <- rstr2pol(sp.layer)
-    # crs(sp.layer) <- prj.str
   }
   # If in WGS84 project to UTM
-  if (is.projected(sp.layer) == F) {
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
     library(rgdal)
-    sp.layer <- spTransform(sp.layer, prj.str)
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   # Check wether GRASS is running, else initialize
   if (nchar(Sys.getenv("GISRC")) == 0) {
@@ -712,7 +780,7 @@ mz_smth <- function(sp.layer, area = 2500) {
   zm.fnl <- readVECT(zm.gnrl)
   # If no CRS, define one
   if (is.na(zm.fnl@proj4string)) {
-    proj4string(zm.fnl) <- prj.str
+    proj4string(zm.fnl) <- prj.crs
   }
   # Remove 'cat' column from data.frame
   zm.fnl@data["cat"] <- NULL
@@ -763,31 +831,57 @@ geo_centroid <- function(sp.layer){
   if (!inherits(sp.layer, "Spatial")) {
     stop("sp.layer isn't a Spatial* object")
   }
+  lyr.crs <- CRS(proj4string(sp.layer))
+  # Get bbox corners
+  corners <- cbind(c(sp.layer@bbox[1], sp.layer@bbox[1],
+                     sp.layer@bbox[3], sp.layer@bbox[3]),
+                   c(sp.layer@bbox[2], sp.layer@bbox[4],
+                     sp.layer@bbox[4], sp.layer@bbox[2]))
+  pol.bb <- Polygon(corners)
+  pols.bb <- Polygons(list(pol.bb), "pol1")
+  sp.pol <- SpatialPolygons(list(pols.bb),
+                            proj4string = lyr.crs)
   # If in UTM project to WGS84
-  if (is.projected(sp.layer) == T) {
+  if (is.projected(sp.pol)) {
     library(rgdal)
-    sp.layer <- spTransform(sp.layer, geo.str)
+    sp.pol <- spTransform(sp.pol, geo.str)
   }
   require(rgeos)
-  coord <- gCentroid(sp.layer)@coords
+  gcent <- gCentroid(sp.pol)
+  coord <- gcent@coords
   names(coord) <- c("Lon", "Lat")
   coord <- coord[c(2, 1)]
   return(coord)
 }
 
-moran_cln <- function(sp.layer, vrbl, dist = 20) {
+moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
+  if (!GM & !LM) {
+    cat("WARNING: no cleaning performed, select GM, LM or both")
+    return(sp.layer)
+  }
+  sp.orig <- sp.layer
+  # If in WGS84 project to UTM
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.crs)
+  }
   # Remove NA's
   if (any(is.na(sp.layer@data[,vrbl]))) {
     sp.layer <- sp.layer[-which(is.na(sp.layer@data[,vrbl])),]
   }
-  # Identify neighbours points by Euclidean distance
+  # Identify neighbour points by Euclidean distance
   nb.lst <- dnearneigh(sp.layer, d1 = 0, d2 = dist)
   # Get number of neighbours in the neighbours list
   nb.crd <- card(nb.lst)
+  if (all(nb.crd == 0)) {
+    cat("WARNING: no cleaning performed, try increasing the neighbor distance\n")
+    return(sp.orig)
+  }
   # Remove points with no neighbors
   spl.noznb <- subset(sp.layer, nb.crd > 0)
   # Also in neighbor list
@@ -796,30 +890,41 @@ moran_cln <- function(sp.layer, vrbl, dist = 20) {
   w.mat <- nb2listw(nb.noznb, style = "W")
   # Get numerical data of variable
   vrbl.dt <- spl.noznb@data[, vrbl]
-  # Compute the lag vector V x
-  wx <- lag.listw(w.mat, vrbl.dt)
-  # Lineal model of lagged vs observed variable
-  xwx.lm <- lm(wx ~ vrbl.dt)
-  # Compute regression (leave-one-out deletion) diagnostics for linear model
-  # and only get get the logical influence matrix
-  infl.xwx <- influence.measures(xwx.lm)[["is.inf"]]
-  # Convert to numeric, 6 column matrix for computation of sums
-  infl.mat <- matrix(as.numeric(infl.xwx), ncol = 6)
-  # Calculate moran scatterplot parameters
-  #mp <- moran.plot(vrbl.dt, w.mat, quiet = T)
-  # Get those rows where at least one index is TRUE
-  mp.out <- which(rowSums(infl.mat) != 0)
-  # Calculate local moran
-  lmo <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
-                    alternative = "less")
-  # Convert to data.frame to select data
-  lmo <- data.frame(lmo)
-  # Get rows wheres indices are significative
-  lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
-  # Get the unique rows to delete
-  all.out <- unique(c(mp.out, lm.out))
+  if (GM) {
+    # Compute the lag vector V x
+    wx <- lag.listw(w.mat, vrbl.dt)
+    # Lineal model of lagged vs observed variable
+    xwx.lm <- lm(wx ~ vrbl.dt)
+    # Compute regression (leave-one-out deletion) diagnostics for
+    # linear model and only get get the logical influence matrix
+    infl.xwx <- influence.measures(xwx.lm)[["is.inf"]]
+    # Convert to numeric, 6 column matrix for computation of sums
+    infl.mat <- matrix(as.numeric(infl.xwx), ncol = 6)
+    # Get those rows where at least one index is TRUE
+    gm.out <- which(rowSums(infl.mat) != 0)
+  }
+  if (LM) {
+    # Calculate local moran
+    lmo <- localmoran(vrbl.dt, w.mat, p.adjust.method = "bonferroni",
+                      alternative = "less")
+    # Convert to data.frame to select data
+    lmo <- data.frame(lmo)
+    # Get rows wheres indices are significative
+    lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
+  }
+  if (GM & LM) {
+    # Get the unique rows to delete
+    all.out <- unique(c(mp.out, lm.out))
+  } else if(GM) {
+    all.out <- gm.out
+  } else if(LM) {
+    all.out <- lm.out
+  }
   # Remove them from SPDF
   spl.noznb <- spl.noznb[-all.out, ]
+  if (!is.projected(sp.layer)) {
+    sp.noznb <- spTransform(sp.layer, geo.str)
+  }
   return(spl.noznb)
 }
 
@@ -830,6 +935,11 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   require(automap)
   require(MASS)
   require(gstat)
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.crs)
+  }
   vrbl.nm <- vrbl
   # Leave only positive observed values
   vrbl.spdt <- subset(sp.layer, eval(parse(text = vrbl.nm)) > 0)
@@ -910,11 +1020,16 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
                                     warn.if.neg = T),
                       error = function(e) return("error"),
                       warning = function(w) return("warning"))
-  if (class(fit.res)[1] == "character" | attr(fit.res, "singular") |
-        fit.res$psill[1] >= fit.res$psill[2]) {
+  if (class(fit.res)[1] == "character") {
     stop("a variogram could not be fitted")
-  } else {
-    vrbl.fit <- fit.res
+  }
+  if (!is.null(attr(fit.res, "singular"))) {
+    if (attr(fit.res, "singular")) {
+      stop("a variogram could not be fitted")
+    }
+  }
+  if (fit.res$psill[1] >= fit.res$psill[2]) {
+    stop("a variogram could not be fitted")
   }
   fit.res <- fit.variogram(vrbl.vgm, vgm(isill, sh.mod, irange, inug), 
                            fit.sills = T, fit.ranges = T, warn.if.neg = T)
@@ -922,7 +1037,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   # Wether to plot the variograms (exp & fit)
   if (plot) {
     print(
-      plot(vrbl.vgm, model = vrbl.fit, pch = 21, cex = 2, lty = 2, lwd = 2,
+      plot(vrbl.vgm, model = vrbl.fit, pch = 19, cex = 2, lty = 2, lwd = 2,
            col = "red", xlab = "Distance", ylab = "Semivariance",
            main = paste0("Emp. & fitted semivariogram for ", vrbl.nm))
     )
@@ -1039,7 +1154,8 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
   veris.pnt <- SpatialPointsDataFrame(coords = veris[,c('Long','Lat')],
                                       proj4string = geo.str, 
                                       data = veris[,vrbl])
-  veris.pnt <- spTransform(veris.pnt, prj.str)
+  prj.crs <- prj_str(utm_zone(veris.pnt))
+  veris.pnt <- spTransform(veris.pnt, prj.crs)
   veris.pnt <- remove.duplicates(veris.pnt)
   write_shp(veris.pnt, paste0('Veris/', fl.nm), overwrite = T)
   rm(veris, veris.n)
@@ -1055,9 +1171,9 @@ elev_import <- function(path = 'Elev') {
     elev <- SpatialPointsDataFrame(coords = elev.cnt, data = elev.df,
                                    proj4string = CRS(proj4string(elev)))
   }
-  
-  if (is.projected(elev) == F) {
-    elev <- spTransform(elev, prj.str)
+  prj.crs <- prj_str(utm_zone(elev))
+  if (!is.projected(elev)) {
+    elev <- spTransform(elev, prj.crs)
   }
   return(elev)
 }
@@ -1067,7 +1183,8 @@ soil_import <- function(path = 'Soil') {
                      header = TRUE, sep = "\t", skipNul = T)
   sp.soil <- SpatialPointsDataFrame(coords = soil.df[,c('Long', 'Lat')], 
                                  data = soil.df, proj4string = geo.str)
-  sp.soil <- spTransform(sp.soil, CRSobj = prj.str)
+  prj.crs <- prj_str(utm_zone(sp.soil))
+  sp.soil <- spTransform(sp.soil, CRSobj = prj.crs)
   writeOGR(sp.soil, overwrite_layer = T, dsn = "./Soil", driver = "ESRI Shapefile",
            layer = "soil")
   return(sp.soil)
@@ -1079,7 +1196,6 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   require(ggplot2)
   require(reshape2)
   require(gridExtra)
-  
   soil <- read_shp(paste0('Soil/', soil, '.shp'))
   proj4string(soil) <- proj4string(sp.layer)
   # Create buffer of 10 m
@@ -1194,13 +1310,19 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   return(LMs)  
 }
 
-trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) {
+trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
+                     n.pas = 1, random = T) {
   require(rgdal)
   require(rgeos)
   require(maptools)
   # Check if sp.layer is a spatialpolygon
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygons* object")
+  }
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  if (!is.projected(sp.layer)) {
+    library(rgdal)
+    sp.layer <- spTransform(sp.layer, prj.crs)
   }
   # Assignment of field boundary
   bound <- sp.layer
@@ -1214,12 +1336,16 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   nc <- round(lon.rng / cell.size[1], 0) + 50
   nr <- round(lat.rng / cell.size[2], 0) + 50
   # Assignment of number of treatments
-  ntrat <- num.trat
+  ntrat <- n.trat
   # Creation of the vector of treatments
   trt.ordr <- vector()
   for (b in 1:ceiling(nc / ntrat)) {
-    rndm <- sample(ntrat, ntrat)
-    trt.ordr <- c(trt.ordr, rndm)
+    if (random) {
+      trt <- sample(ntrat, ntrat)
+    } else {
+      trt <- 1:ntrat
+    }
+    trt.ordr <- c(trt.ordr, trt)
   }
   pas.ordr <- vector()
   for (f in trt.ordr) {
@@ -1241,6 +1367,13 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   }
   col.t <- t(col.mat)
   col.v <- as.vector(col.t)
+  # Creation of row identifiers
+  row.mat <- mat
+  for (i in 1:ncol(mat)) {
+    row.mat[, i] <- 1:nrow(mat)
+  }
+  row.t <- t(row.mat)
+  row.v <- as.vector(row.t)
   # Creation of the vector of replications
   rep.ordr <- vector()
   for (f in 1:ceiling(nc / ntrat)) {
@@ -1261,23 +1394,23 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Creation of a rectangular grid of defined dimensions
   grd <- GridTopology(cell.offset, cell.size, c(nc, nr))
   # Conversion to spatial polygons
-  pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.str)
+  pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.crs)
   # Extraction of the IDs of all the polygons
   pol.lst <- list()
   for (a in seq_along(pol.1)) {
     pol.lst[a] <- slot(pol.1[a,]@polygons[[1]], "ID") 
   }
   # Creation of the data frame of the polygons
-  data <- data.frame(Col = col.v, Trat = trt.v, Rep = rep.v)
+  data <- data.frame(Col = col.v, Row = row.v, Trat = trt.v, Rep = rep.v)
   row.names(data) <- unlist(pol.lst)
   # Adding the data frame to the polygons
   pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
-  proj4string(pol.2) <- prj.str
+  proj4string(pol.2) <- prj.crs
   if (ang > 0) {
     # Rotation of the polygons by the defined angle
     pol.3 <- elide(pol.2, rotate = ang,
                    center = gCentroid(bound)@coords)
-    proj4string(pol.3) <- prj.str
+    proj4string(pol.3) <- prj.crs
   } else {
     pol.3 <- pol.2
   }
@@ -1286,14 +1419,14 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, num.trat, n.pas = 1) 
   # Creation of spatialpoints to join the attribute table with the clipped polygon
   pol.3.pnt <- SpatialPointsDataFrame(coordinates(pol.3),
                                       pol.3@data,
-                                      proj4string = prj.str)
+                                      proj4string = prj.crs)
   pol.3.pnt <- gBuffer(pol.3.pnt,
                        width = (min(cell.size) - 0.1) / 2,
                        byid = T)
   # Extraction of the data frame rows that match with the clipped polygons
   df <- over(pol.4, pol.3.pnt)
   # Final spatialpolygondf with attribute table
-  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = pol.3@data[df,], match.ID = F)
+  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = df, match.ID = F)
   gc()
   return(pol.5)
 }
@@ -1309,8 +1442,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   library(ade4)
   library(spdep)
   if (any(is.na(sp.layer@data[vrbls]))) {
-    library(DMwR)
-    sp.layer@data <- knnImputation(sp.layer@data[vrbls])
+    sp.layer@data <- df_impute(sp.layer@data[vrbls])
   } else {
     sp.layer@data <- sp.layer@data[vrbls]
   }
@@ -1412,7 +1544,13 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
     stop("sp.layer isn't a Spatial* object")
   }
   require(rgdal)
-  writeOGR(obj = sp.layer, dsn = dirname(file.name), layer = basename(file.name),
+  # Check if it has extension  for the two functions
+  if (length(grep(".shp$", file.name, ignore.case = T)) == 1) {
+    fl.nm2 <- sub(".shp", "", file.name)
+  } else {
+    fl.nm2 <- file.name
+  }
+  writeOGR(obj = sp.layer, dsn = dirname(file.name), layer = basename(fl.nm2),
            overwrite_layer = overwrite, driver = "ESRI Shapefile")
 }
 
@@ -1420,8 +1558,8 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
 rstr2pol <- function(raster) {
   require(rgdal)
   require(RSAGA)
-  if (!inherits(raster, "RasterLayer")) {
-    stop("sp.layer isn't a RasterLayer object")
+  if (!inherits(raster, "Raster")) {
+    stop("sp.layer isn't a Raster* object")
   }
   # Create temporary files
   tmp.rstr <- tempfile(fileext = ".tif")
@@ -1475,10 +1613,11 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   veris <- spTransform(veris, geo.str)
   veris$lat <- veris@coords[,2]
   veris$long <- veris@coords[,1]
-  veris <- spTransform(veris, prj.str)
+  prj.crs <- prj_str(utm_zone(veris))
+  veris <- spTransform(veris, prj.crs)
   # Load soil data
   soil <- read_shp('Soil/soil')
-  soil <- spTransform(soil, prj.str)
+  soil <- spTransform(soil, prj.crs)
   soil$lat <- soil@coords[,2]
   soil$long <- soil@coords[,1]
   soil@data$Muestra <- 1:dim(soil@data)[1]
@@ -1796,8 +1935,92 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   dev.off()
 }
 
-save(lndst.pol, prj.str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
-     cols, elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
+# Impute missing values in data.frame
+df_impute <- function(dt.frm, n.neig = 2) {
+  if (!inherits(dt.frm, "data.frame")) {
+    stop("input isn't a data.frame")
+  }
+  if (!any(is.na(dt.frm))) return(dt.frm)
+  # Save default value for nearest neighbors
+  def.neigh <- n.neig
+  # Get columns with NAs
+  na.cols <- colnames(dt.frm)[unlist(lapply(dt.frm, function(x) any(is.na(x))))]
+  # For every column with NA do...
+  for (cl in na.cols) {
+    # Get vector of values
+    cl.df <- dt.frm[, cl]
+    # Get indices of NAs
+    na.lns <- which(is.na(cl.df))
+    # For each index do...
+    for (ln in na.lns) {
+      # Get index of neighbors
+      mn.lns <- ((ln - n.neig):(ln + n.neig))[-(n.neig + 1)]
+      mn.lns <- mn.lns[mn.lns >= 1 & mn.lns <= length(cl.df)]
+      # If NAs in neighbors increase number of neighbors
+      if (any(is.na(cl.df[mn.lns]))) {
+        mn.lns <- ((ln - (n.neig + 1)):(ln + (n.neig + 1)))[-(n.neig + 1 + 1)]
+        mn.lns <- mn.lns[mn.lns >= 1 & mn.lns <= length(cl.df)]
+      }
+      # Compute mean
+      if (is.character(cl.df)) {
+        imp.mn <- Mode(cl.df[mn.lns], na.rm = T)
+      } else {
+        imp.mn <- mean(cl.df[mn.lns], na.rm = T)
+        if (is.integer(cl.df)) imp.mn <- round(imp.mn)
+      }
+      # Replace value
+      dt.frm[ln, cl] <- imp.mn
+    }
+  }
+  return(dt.frm)
+}
+
+# Raster resampling using GdalUtils
+r_rsmp <- function(r.layer, fact = 3) {
+  if (!inherits(r.layer, "Raster")) {
+    stop("sp.layer isn't a Raster* object")
+  }
+  require(gdalUtils)
+  # Store band names for future use
+  bnd.nms <- names(r.layer)
+  # Generate temp file names
+  tmp1 <- tempfile(fileext = ".tif")
+  tmp2 <- tempfile(fileext = ".tif")
+  # Write temporary raster
+  writeRaster(r.layer, filename = tmp1)
+  # Define raster size
+  cl.sz <- res(r.layer) / fact
+  # Project raster with cubic convolution resampling
+  rsmp.rstr <- gdalwarp(srcfile = tmp1, dstfile = tmp2, tr = cl.sz,
+                        r = "cubic", output_Raster = T)
+  # Assign back band names
+  names(rsmp.rstr) <- bnd.nms
+  return(rsmp.rstr)
+}
+
+Mode <- function(x, na.rm = T) {
+  if(na.rm){
+    x = x[!is.na(x)]
+  }
+  ux <- unique(x)
+  x.mode <- ux[which.max(tabulate(match(x, ux)))]
+  return(x.mode)
+}
+
+utm_zone <- function(sp.layer) {
+  if (!inherits(sp.layer, "Spatial")){
+    stop("sp.layer isn't a Spatial* object")
+  }
+  sp.cent <- geo_centroid(sp.layer)
+  long <- sp.cent[2]
+  names(long) <- NULL
+  utm.zn <- (floor((long + 180) / 6) %% 60) + 1
+  return(utm.zn)
+}
+
+save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
+     elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, file = "~/SIG/Geo_util/Functions.RData")
+     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone,
+     file = "~/SIG/Geo_util/Functions.RData")
