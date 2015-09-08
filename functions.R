@@ -931,7 +931,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   return(list(lmbd, vrbl.vgm, vrbl.fit))
 }
 
-kmz_sv <- function(sp.layer = interp.rp, spz = spz){
+kmz_sv <- function(sp.layer = interp.rp, spz = spz, Rev = F){
   require(plotKML)
   kmz.name <- paste0(basename(getwd()), '_Reporte_TDCA')
   rstr_lyr <- pnt2rstr(sp.layer, c('DEM', 'SWI', 'EC30', 'EC90', 'OM', 'CEC'))
@@ -947,18 +947,24 @@ kmz_sv <- function(sp.layer = interp.rp, spz = spz){
 #       spz@polygons[[pol]] <- pol1
 #     }
 #   }
-  spz@data$Zone[spz@data$Zone == 1] <- '1. Alta'
-  spz@data$Zone[spz@data$Zone == 2] <- '2. Media'
-  spz@data$Zone[spz@data$Zone == 3] <- '3. Baja'
   kml_open(file.name = paste0(kmz.name, '.kml'),
            folder.name = kmz.name, 
            overwrite = T)
-  kml_layer(spz, 
-            raster.name = 'Calidad de Sitio',
-            subfolder.name='Calidad de Sitio (s/u)',
-            colour = Zone,
-            colour_scale = rev(cols(255)),
-            outline = F)
+  if(Rev == F){
+    kml_layer(spz, 
+              raster.name = 'Calidad de Sitio',
+              subfolder.name='Calidad de Sitio (s/u)',
+              colour = Calidad,
+              colour_scale = cols(3),
+              outline = F)
+  } else {
+    kml_layer(spz, 
+              raster.name = 'Calidad de Sitio',
+              subfolder.name='Calidad de Sitio (s/u)',
+              colour = Calidad,
+              colour_scale = rev(cols(3)),
+              outline = F)
+  }
   kml_layer(rstr_lyr, 
             raster.name = 'DEM',
             subfolder.name='DEM (m)',
@@ -1000,7 +1006,8 @@ kmz_sv <- function(sp.layer = interp.rp, spz = spz){
 }
 
 # Import Veris data
-veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR')){
+veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'), 
+                         clean = T, vrbl.cl = c('Speed', 'Depth', 'OM_ratio'), fl.nm = 'veris'){
   fls <- list.files(path = "./Veris/", pattern = paste0(vrs.fl, '.*\\.txt'))
   for (b in fls) {
     veris.n <- read.table(paste0("Veris/", b), header = TRUE, sep = "\t", skipNul = T)
@@ -1014,6 +1021,19 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
   ec90.nm <- grep("EC_DP|EC.DP|EC90|EC DP", names(veris), ignore.case = T, value = T)
   if (length(ec30.nm) == 1) { names(veris) <- sub(ec30.nm, "EC30", names(veris)) }
   if (length(ec90.nm) == 1) { names(veris) <- sub(ec90.nm, "EC90", names(veris)) }
+  # cleaning by data distribution
+  if (clean) {
+    require(robustbase)
+    for (a in vrbl.cl){
+      vrbl.data <- veris[, a]
+      # Outlier detection
+      vrbl.out <- adjboxStats(vrbl.data)$out
+      # If there are outliers they will be removed
+      if (length(vrbl.out)>0) {
+        veris <- veris[!(vrbl.data %in% vrbl.out),]
+      }
+    }
+  }
   require(sp)
   require(rgdal)
   veris.pnt <- SpatialPointsDataFrame(coords = veris[,c('Long','Lat')],
@@ -1021,6 +1041,7 @@ veris_import <- function(vrs.fl = 'VSECOM', vrbl = c('EC30', 'EC90', 'Red', 'IR'
                                       data = veris[,vrbl])
   veris.pnt <- spTransform(veris.pnt, prj.str)
   veris.pnt <- remove.duplicates(veris.pnt)
+  write_shp(veris.pnt, paste0('Veris/', fl.nm), overwrite = T)
   rm(veris, veris.n)
   return(veris.pnt)
 }
@@ -1281,7 +1302,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
                                          "SWI", "EC30", "EC90", "OM",
                                          "CEC", "EVI_mean"),
                      n.mz = 3, dist = 20, plot = F, sp.layer2 = bound.shp, 
-                     area = 3000) {
+                     area = 3000, style = 'fisher') {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
@@ -1324,7 +1345,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   row.names(cs1) <- NULL
   # Clusterization of the first component in the selected number of clusters
   rast <- disaggregate(pnt2rstr(sp.pca, "CS1"), fact = 5, method = 'bilinear')
-  pca.rast <- rstr_rcls(rast, n.class = n.mz, val = 1:n.mz, style = 'quantile')
+  pca.rast <- rstr_rcls(rast, n.class = n.mz, val = 1:n.mz, style)
   pca.rast <- mask(pca.rast, sp.layer2)
   # Cleaning of the managemnent zones
   sp.pol <- mz_smth(pca.rast, area)
@@ -1424,7 +1445,8 @@ rstr2pol <- function(raster) {
 }
 
 # Report creation
-report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 16){ 
+report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, 
+                        vrbl.sl = vrbls, zoom = 16, Rev = F){ 
   require(rgdal)
   require(rgeos)
   require(ggplot2)
@@ -1461,8 +1483,8 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   soil$long <- soil@coords[,1]
   soil@data$Muestra <- 1:dim(soil@data)[1]
   # Soil samples data
-  vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
-#  vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
+  # vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
+  # vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (meq/100g)', 
               'Na (meq/100g)', 'Zn (ppm)', 'CIC (meq/100g)')
 #   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (ppm)', 
@@ -1642,25 +1664,24 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
                        labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
     scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
                        labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
-  p7 <- ggplot() +
-    # geom_polygon(data = spz.df, aes(x = long, y = lat, group = group, fill = Zone), colour = 'black', size = 0.3) +
-    geom_polygon(data = spz.df[spz.df$id %in% spz.df[spz.df$hole,]$id,], 
-                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black', size = 0.3) +
-    geom_polygon(data = spz.df[!spz.df$id %in% spz.df[spz.df$hole,]$id,], 
-                 aes(x = long, y = lat, group = group, fill = Zone), colour = 'black', size = 0.3) +
-    geom_point(data = data.frame(soil@coords), aes(x = coords.x1, y = coords.x2), shape = 19, size = 2) +
-    geom_text(data = soil@data, aes(x = long, y = lat, label = soil@data$Muestra), hjust = 1, vjust = 1) +
-    coord_equal() + labs(x = 'Longitud', y = 'Latitud', title = 'Calidad de Sitio', fill = '') +
-    scale_fill_gradientn(colours = rev(cols(3)), breaks = c(1,2,3), guide = guide_legend(), 
-                         labels = c("Alta", rep("", max(spz@data$Zone)-2), "Baja")) + theme_bw() + 
-    theme(plot.title = element_text(size = 16, face = 'bold'),
-          axis.title.x = element_blank(),
-          axis.title.y = element_blank(),
-          axis.ticks = element_blank()) +
-    scale_y_continuous(breaks=seq(min(veris$y), max(veris$y), length = 5),
-                       labels=c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))) +
-    scale_x_continuous(breaks=seq(min(veris$x), max(veris$x), length = 5),
-                       labels=c(round(seq(min(veris$long), max(veris$long), length = 5),3)))
+  y.vals <- seq(min(veris$y), max(veris$y), length = 5) 
+  y.labs <- c(round(seq(min(veris$lat), max(veris$lat), length = 5),3))
+  x.vals <- seq(min(veris$x), max(veris$x), length = 5) 
+  x.labs <- c(round(seq(min(veris$long), max(veris$long), length = 5),3))
+  pnts <- list('sp.points', soil, pch=19, cex=.8, col = 'black')
+  pnts.lbs <- list('sp.pointLabel', soil, label = soil@data$Muestra, cex=1.2, col = 'black')
+  if(Rev == T){
+    lut <- rev(cols(3))
+    lbls <- c('Alta', 'Media', 'Baja')
+  } else {
+    lut <- cols(3)
+    lbls <- c('Baja', 'Media', 'Alta')
+  }
+  p7 <- spplot(spz, 'Zone', col.regions = lut, cuts = 2,
+               scales = list(y=list(at = y.vals, labels = y.labs), x = list(at = x.vals, labels = x.labs)),
+               sp.layout = list(pnts, pnts.lbs),
+               colorkey = list(labels=list(at = c(1,2,3), labels = lbls), 
+                               height = 0.15))
   # Create histogram plots (DEM, SWI, EC30, EC90, MO, CIC, Zones)
   title <- paste0('Min:', format(min(veris@data$DEM), digits = 1, nsmall = 1),
                   ' / Median:', format(median(veris@data$DEM), digits = 1, nsmall = 1),
@@ -1669,7 +1690,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1681,7 +1702,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1693,7 +1714,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1705,7 +1726,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1717,7 +1738,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
+    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1729,7 +1750,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz, zoom = 
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
