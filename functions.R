@@ -1368,8 +1368,8 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   # Lat-Lon point of the lower left corner
   min.bbox <- bbox[, "min"]
   # Offset of the corner
-  cell.offset <- c(min.bbox[1] - lon.rng / 4,
-                   min.bbox[2] - lat.rng / 4)
+  cell.offset <- c(gCentroid(bound)@coords[1] - (cell.size[1] * nc) / 2,
+                   gCentroid(bound)@coords[2] - (cell.size[2] * nr) / 2)
   # Creation of a rectangular grid of defined dimensions
   grd <- GridTopology(cell.offset, cell.size, c(nc, nr))
   # Conversion to spatial polygons
@@ -1400,12 +1400,13 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
                                       pol.3@data,
                                       proj4string = prj.crs)
   pol.3.pnt <- gBuffer(pol.3.pnt,
-                       width = (min(cell.size) - 0.1) / 2,
+                       width = (min(cell.size) - 0.001) / 2,
                        byid = T)
   # Extraction of the data frame rows that match with the clipped polygons
   df <- over(pol.4, pol.3.pnt)
   # Final spatialpolygondf with attribute table
   pol.5 <- SpatialPolygonsDataFrame(pol.4, data = df, match.ID = F)
+  pol.6 <- pol.5[!is.na(pol.5@data$Col),]
   gc()
   return(pol.5)
 }
