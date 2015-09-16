@@ -1333,8 +1333,8 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   lon.rng <- bbox[1,2] - bbox[1,1]
   lat.rng <- bbox[2,2] - bbox[2,1]
   # Number of rows and columns plu 50 to make it bigger
-  nc <- round(lon.rng / cell.size[1], 0) + 50
-  nr <- round(lat.rng / cell.size[2], 0) + 50
+  nc <- round(lon.rng / cell.size[1], 0) + 100
+  nr <- round(lat.rng / cell.size[2], 0) + 100
   # Assignment of number of treatments
   ntrat <- n.trat
   # Creation of the vector of treatments
@@ -1396,38 +1396,28 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   # Conversion to spatial polygons
   pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.crs)
   # Extraction of the IDs of all the polygons
-  pol.lst <- list()
-  for (a in seq_along(pol.1)) {
-    pol.lst[a] <- slot(pol.1[a,]@polygons[[1]], "ID") 
-  }
-  # Creation of the data frame of the polygons
-  data <- data.frame(Col = col.v, Row = row.v, Trat = trt.v, Rep = rep.v)
-  row.names(data) <- unlist(pol.lst)
-  # Adding the data frame to the polygons
-  pol.2 <- SpatialPolygonsDataFrame(pol.1, data = data, match.ID = T)
-  proj4string(pol.2) <- prj.crs
+  pol.lst <- sapply(pol.1@polygons, slot, "ID")
   if (ang > 0) {
     # Rotation of the polygons by the defined angle
-    pol.3 <- elide(pol.2, rotate = ang,
+    pol.2 <- elide(pol.1, rotate = ang,
                    center = gCentroid(bound)@coords)
-    proj4string(pol.3) <- prj.crs
+    proj4string(pol.2) <- prj.crs
   } else {
-    pol.3 <- pol.2
+    pol.2 <- pol.1
   }
   # Clipping of the polygon with the boundary
-  pol.4 <- gIntersection(bound, pol.3, byid = T)
-  # Creation of spatialpoints to join the attribute table with the clipped polygon
-  pol.3.pnt <- SpatialPointsDataFrame(coordinates(pol.3),
-                                      pol.3@data,
-                                      proj4string = prj.crs)
-  pol.3.pnt <- gBuffer(pol.3.pnt,
-                       width = (min(cell.size) - 0.001) / 2,
-                       byid = T)
-  # Extraction of the data frame rows that match with the clipped polygons
-  df <- over(pol.4, pol.3.pnt)
-  # Final spatialpolygondf with attribute table
-  pol.5 <- SpatialPolygonsDataFrame(pol.4, data = df, match.ID = F)
-  pol.6 <- pol.5[!is.na(pol.5@data$Col),]
+  pol.3 <- gIntersection(bound, pol.2, byid = T)
+  # Creation of the data frame of the polygons
+  data <- data.frame(Col = col.v, Row = row.v, Trat = trt.v, Rep = rep.v)
+  row.names(data) <- paste0("0 ", pol.lst)
+  # Add pol IDs to data.frame
+  pol.lst2 <- sapply(pol.3@polygons, slot, "ID")
+  df.rows <- match(pol.lst2, paste0("0 ", pol.lst))
+  data2 <- data[df.rows,]
+  # Adding the data frame to the polygons
+  pol.4 <- SpatialPolygonsDataFrame(pol.3, data = data2, match.ID = T)
+  proj4string(pol.4) <- prj.crs
+  pol.5 <- pol.4[!is.na(pol.4@data$Col),]
   gc()
   return(pol.5)
 }
@@ -1830,7 +1820,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1842,7 +1832,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1854,7 +1844,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1866,7 +1856,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1878,7 +1868,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
+    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1890,7 +1880,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
