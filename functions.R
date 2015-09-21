@@ -1395,8 +1395,6 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   grd <- GridTopology(cell.offset, cell.size, c(nc, nr))
   # Conversion to spatial polygons
   pol.1 <- as.SpatialPolygons.GridTopology(grd, proj4string = prj.crs)
-  # Extraction of the IDs of all the polygons
-  pol.lst <- sapply(pol.1@polygons, slot, "ID")
   if (ang > 0) {
     # Rotation of the polygons by the defined angle
     pol.2 <- elide(pol.1, rotate = ang,
@@ -1407,12 +1405,15 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   }
   # Clipping of the polygon with the boundary
   pol.3 <- gIntersection(bound, pol.2, byid = T)
-  # Creation of the data frame of the polygons
-  data <- data.frame(Col = col.v, Row = row.v, Trat = trt.v, Rep = rep.v)
-  row.names(data) <- paste0("0 ", pol.lst)
+  # Extraction of the IDs of all the polygons
+  pol.lst <- sapply(pol.1@polygons, slot, "ID")
   # Add pol IDs to data.frame
   pol.lst2 <- sapply(pol.3@polygons, slot, "ID")
-  df.rows <- match(pol.lst2, paste0("0 ", pol.lst))
+  pol.lst <- gsub("^g", paste0(strsplit(pol.lst2[1], split = " ")[[1]][1], " g"), pol.lst)
+  # Creation of the data frame of the polygons
+  data <- data.frame(Col = col.v, Row = row.v, Trat = trt.v, Rep = rep.v)
+  row.names(data) <- pol.lst
+  df.rows <- match(pol.lst2, pol.lst)
   data2 <- data[df.rows,]
   # Adding the data frame to the polygons
   pol.4 <- SpatialPolygonsDataFrame(pol.3, data = data2, match.ID = T)
