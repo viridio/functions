@@ -2010,9 +2010,24 @@ utm_zone <- function(sp.layer) {
   return(utm.zn)
 }
 
+sd_cln <- function(sp.layer, cln.col, mult = 2.5) {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")){
+    stop("sp.layer isn't a SpatialPointsDataFrame object")
+  }
+  if (!yld.attr %in% names(ym.shp)) {
+    stop("Column is not present in the data.frame")
+  }
+  vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, yld.col]), cln.col]
+  mn <- mean(vrbl.dt)
+  sd <- sd(vrbl.dt)
+  lim <- c(mn - mult * sd, mn + mult * sd)
+  sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
+  return(sp.layer)
+}
+
 save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone,
+     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone, sd_cln,
      file = "~/SIG/Geo_util/Functions.RData")
