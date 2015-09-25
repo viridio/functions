@@ -1457,7 +1457,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   # Creation of a SPDF with the created Spatial components
   sp.pca <- SpatialPointsDataFrame(sp.layer,
                                    data.frame(sp.mltspt$li),
-                                   proj4string = prj.crs)
+                                   proj4string = proj4string(sp.layer))
   # Plot for first 2 principal components
   if (plot) {
     par(mfrow = c(1, 2))
