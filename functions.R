@@ -2,11 +2,11 @@ load(file = "~/SIG/Geo_util/Functions.RData")
 
 prj_str <- function(zone) {
   zn.str <- paste0("+proj=utm +zone=", zone,
-                   " +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+                   " +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
   return(CRS(zn.str))
 }
 
-geo.str <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+geo.str <- CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
 
 hyb.param <- read.csv("~/SIG/Research_Partners/hyb_param.csv", stringsAsFactors = F)
 names(hyb.param) <- gsub("\\.", "", names(hyb.param))
