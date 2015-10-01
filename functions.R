@@ -2026,10 +2026,10 @@ sd_cln <- function(sp.layer, cln.col, mult = 2.5) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")){
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
-  if (!yld.attr %in% names(ym.shp)) {
+  if (!cln.col %in% names(sp.layer)) {
     stop("Column is not present in the data.frame")
   }
-  vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, yld.col]), cln.col]
+  vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, cln.col]), cln.col]
   mn <- mean(vrbl.dt)
   sd <- sd(vrbl.dt)
   lim <- c(mn - mult * sd, mn + mult * sd)
