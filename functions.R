@@ -967,7 +967,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
     }
   }
   # Set number of samples according to size
-  ifelse(length(vrbl.spdt) > 5000, n.samp <- 5000, n.samp <- length(vrbl.spdt))
+  n.samp <- ifelse(length(vrbl.spdt) > 5000, 5000, length(vrbl.spdt))
   # Assing object in Global Environment for lineal model
   assign(".vrbl.dt", vrbl.dt, envir = .GlobalEnv)
   # Lambda calculation for normality
