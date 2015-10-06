@@ -2,11 +2,11 @@ load(file = "~/SIG/Geo_util/Functions.RData")
 
 prj_str <- function(zone) {
   zn.str <- paste0("+proj=utm +zone=", zone,
-                   " +south +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+                   " +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
   return(CRS(zn.str))
 }
 
-geo.str <- CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs")
+geo.str <- CRS("+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0")
 
 hyb.param <- read.csv("~/SIG/Research_Partners/hyb_param.csv", stringsAsFactors = F)
 names(hyb.param) <- gsub("\\.", "", names(hyb.param))
@@ -44,6 +44,25 @@ for (a in seq_along(lndst_01)) {
 lndst.pol <- lndst_02
 rm(a, lndst_01, lndst_02)
 
+# Build SRTM list of polygons for matching scenes
+hgt.lst <- list.files("~/SIG/Geo_util/raster/arg/srtm_1s",
+                      ".hgt$", full.names = T)
+srtm.pol <- list()
+for (a in seq_along(hgt.lst)) {
+  r <- raster(hgt.lst[a])
+  proj4string(r) <- geo.str
+  e <- r@extent
+  m <- matrix(c(e[1], e[1], e[2], e[2],
+                e[3], e[4], e[4], e[3]),
+              ncol = 2)
+  b <- spPolygons(m, crs = proj4string(r),
+                  attr = data.frame(LL = sub(".hgt", "", basename(hgt.lst[a])),
+                                    stringsAsFactors = F))
+  srtm.pol[a] <- b
+  rm(a, r, e, m, b)
+}
+rm(hgt.lst)
+
 #Function to get Landsat scene Path and Row from spatial object
 scn_pr <- function(sp.layer) {
   require(sp)
@@ -64,25 +83,6 @@ scn_pr <- function(sp.layer) {
   #Return vector of landsat path and rows
   return(pth_rw_lst)
 }
-
-# Build SRTM list of polygons for matching scenes
-hgt.lst <- list.files("~/SIG/Geo_util/raster/arg/srtm_1s",
-                      ".hgt$", full.names = T)
-srtm.pol <- list()
-for (a in seq_along(hgt.lst)) {
-  r <- raster(hgt.lst[a])
-  proj4string(r) <- geo.str
-  e <- r@extent
-  m <- matrix(c(e[1], e[1], e[2], e[2],
-                e[3], e[4], e[4], e[3]),
-              ncol = 2)
-  b <- spPolygons(m, crs = proj4string(r),
-                  attr = data.frame(LL = sub(".hgt", "", basename(hgt.lst[a])),
-                                    stringsAsFactors = F))
-  srtm.pol[a] <- b
-  rm(a, r, e, m, b)
-}
-rm(hgt.lst)
 
 #Function to get SRTM scenes from spatial object
 srtm_pr <- function(sp.layer) {
@@ -967,7 +967,7 @@ var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
     }
   }
   # Set number of samples according to size
-  ifelse(length(vrbl.spdt) > 5000, n.samp <- 5000, n.samp <- length(vrbl.spdt))
+  n.samp <- ifelse(length(vrbl.spdt) > 5000, 5000, length(vrbl.spdt))
   # Assing object in Global Environment for lineal model
   assign(".vrbl.dt", vrbl.dt, envir = .GlobalEnv)
   # Lambda calculation for normality
@@ -1426,32 +1426,39 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
 multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
                                          "SWI", "EC30", "EC90", "OM",
                                          "CEC", "EVI_mean"),
-                     n.mz = 3, dist = 20, plot = F, sp.layer2 = bound.shp, 
-                     area = 3000, style = 'fisher') {
+                     n.mz = 3, dist = 20, plot = F, resample = F,
+                     area = 3000, style = "kmeans") {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   library(ade4)
   library(spdep)
-  if (any(is.na(sp.layer@data[vrbls]))) {
-    sp.layer@data <- df_impute(sp.layer@data[vrbls])
-  } else {
-    sp.layer@data <- sp.layer@data[vrbls]
-  }
   # Creation of the data.frame for PCA
-  df <- sp.layer@data
+  if (any(is.na(sp.layer@data[vrbls]))) {
+    df <- df_impute(sp.layer@data[vrbls])
+  } else {
+    df <- sp.layer@data[vrbls]
+  }
+  prj.crs <- prj_str(utm_zone(sp.layer))
+  # Check projection for neighbors computing
+  if (!is.projected(sp.layer)) {
+    pp <- spTransform(sp.layer, CRSobj = prj.crs)
+  } else {
+    pp <- sp.layer
+  }
   # Calculation of nearest neighbors based on selected distance
-  n.neigh <- dnearneigh(sp.layer, 0, dist)
+  n.neigh <- dnearneigh(pp, 0, dist)
   # Creation of the spatial weighted neighbor list
   sp.w <- nb2listw(n.neigh, style = "W")
   # Calculation of the PCA on the selected variables
-  data.pca <- dudi.pca(df, center = T, scannf = F)
+  data.pca <- dudi.pca(df, center = T, scale = T, scannf = F)
   # Run of multispati function
   sp.mltspt <- multispati(data.pca, sp.w, scannf = F)
   # Creation of a SPDF with the created Spatial components
   sp.pca <- SpatialPointsDataFrame(sp.layer,
                                    data.frame(sp.mltspt$li),
                                    proj4string = proj4string(sp.layer))
+  # Plot for first 2 principal components
   if (plot) {
     par(mfrow = c(1, 2))
     s.corcircle(data.pca$co)
@@ -1462,15 +1469,20 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
             col = "grey30", border = NA)
     par(mfrow = c(1, 1))
   }
+  # Creation of data.frame of first spatial principal componenet
   cs1 <- data.frame("Variable" = row.names(data.pca$c1), "CS1" = data.pca$c1)
   row.names(cs1) <- NULL
   names(cs1)[2:ncol(cs1)] <- paste0("CS", 1:(ncol(cs1)-1))
   cs1 <- cs1[order(-abs(cs1[, 2])),]
   row.names(cs1) <- NULL
-  # Clusterization of the first component in the selected number of clusters
-  rast <- disaggregate(pnt2rstr(sp.pca, "CS1"), fact = 5, method = 'bilinear')
-  pca.rast <- rstr_rcls(rast, n.class = n.mz, val = 1:n.mz, style)
-  pca.rast <- mask(pca.rast, sp.layer2)
+  # Resampling of raster
+  if(resample) {
+    rast <- r_rsmp(pnt2rstr(sp.pca, "CS1"), fact = 5)
+  } else {
+    rast <- pnt2rstr(sp.pca, "CS1")
+  }
+  # Clustering of the first component in the selected number of clusters
+  pca.rast <- rstr_rcls(rast, n.class = n.mz, style = style)
   # Cleaning of the managemnent zones
   sp.pol <- mz_smth(pca.rast, area)
   print(cs1)
@@ -2010,9 +2022,37 @@ utm_zone <- function(sp.layer) {
   return(utm.zn)
 }
 
+sd_cln <- function(sp.layer, cln.col, mult = 2.5) {
+  if (!inherits(sp.layer, "SpatialPointsDataFrame")){
+    stop("sp.layer isn't a SpatialPointsDataFrame object")
+  }
+  if (!cln.col %in% names(sp.layer)) {
+    stop("Column is not present in the data.frame")
+  }
+  vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, cln.col]), cln.col]
+  mn <- mean(vrbl.dt)
+  sd <- sd(vrbl.dt)
+  lim <- c(mn - mult * sd, mn + mult * sd)
+  sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
+  return(sp.layer)
+}
+
+pol2pnt <- function(sp.layer) {
+  if (!inherits(sp.layer, "SpatialPolygonsDataFrame")){
+    stop("sp.layer isn't a SpatialPolygonsDataFrame object")
+  }
+  require(rgeos)
+  sp.cnt <- gCentroid(sp.layer, byid = T, id = 1:length(sp.layer))
+  sp.cnt2 <- SpatialPointsDataFrame(sp.cnt, data.frame(sp.layer@data,
+                                                       row.names = 1:length(sp.layer),
+                                                       stringsAsFactors = F),
+                                    proj4string =  proj4string(sp.layer))
+  return(sp.cnt2)
+}
+
 save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
-     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone,
+     rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone, sd_cln, pol2pnt,
      file = "~/SIG/Geo_util/Functions.RData")
