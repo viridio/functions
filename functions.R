@@ -1616,8 +1616,8 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   # Soil samples data
   # vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
   # vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
-  col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (meq/100g)', 
-              'Na (meq/100g)', 'Zn (ppm)', 'CIC (meq/100g)')
+  col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'S (ppm)', 
+              'Zn (ppm)', 'PSI (%)', 'CIC (meq/100g)')
 #   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (ppm)', 
 #               'Na (ppm)', 'Zn (ppm)', 'CIC (meq/100g)')
   var.nm <- match(vrbl.sl, names(soil@data))
@@ -1821,7 +1821,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1833,7 +1833,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1845,7 +1845,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1857,7 +1857,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1869,7 +1869,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
+    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1881,7 +1881,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
