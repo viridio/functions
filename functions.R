@@ -2022,18 +2022,20 @@ utm_zone <- function(sp.layer) {
   return(utm.zn)
 }
 
-sd_cln <- function(sp.layer, cln.col, mult = 2.5) {
+sd_cln <- function(sp.layer, cln.cols, mult = 2.5) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")){
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
-  if (!cln.col %in% names(sp.layer)) {
-    stop("Column is not present in the data.frame")
+  for (col in cln.cols) {
+    if (!col %in% names(sp.layer)) {
+      stop(gettextf("%s is not present in the data.frame", col))
+    }
+    vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, col]), col]
+    mn <- mean(vrbl.dt)
+    sd <- sd(vrbl.dt)
+    lim <- c(mn - mult * sd, mn + mult * sd)
+    sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
   }
-  vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, cln.col]), cln.col]
-  mn <- mean(vrbl.dt)
-  sd <- sd(vrbl.dt)
-  lim <- c(mn - mult * sd, mn + mult * sd)
-  sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
   return(sp.layer)
 }
 
