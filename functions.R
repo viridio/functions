@@ -353,8 +353,7 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
 
 #Rsaga DEM Covariates
 dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.rst = T) {
-  if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
-      !inherits(DEM.layer, "Raster")) {
+  if (!inherits(DEM.layer, c("SpatialPointsDataFrame", "Raster"))) {
     stop("DEM.layer isn't a SpatialPointsDataFrame or Raster* object")
   }
   require(sp)
@@ -741,7 +740,7 @@ grd_m <- function(sp.layer, dist = 10) {
 }
 
 mz_smth <- function(sp.layer, area = 2500) {
-  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "Raster")) {
+  if (!inherits(sp.layer, c("SpatialPolygons", "Raster"))) {
     stop("sp.layer isn't a SpatialPolygons* or Raster* object")
   }
   require(rgrass7)
@@ -1423,10 +1422,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   return(pol.5)
 }
 
-multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
-                                         "SWI", "EC30", "EC90", "OM",
-                                         "CEC", "EVI_mean"),
-                     n.mz = 3, dist = 20, plot = F, resample = F,
+multi_mz <- function(sp.layer, vrbls, n.mz = 3, dist = 20, plot = F, resample = F,
                      area = 3000, style = "kmeans") {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
@@ -1470,14 +1466,14 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
     par(mfrow = c(1, 1))
   }
   # Creation of data.frame of first spatial principal componenet
-  cs1 <- data.frame("Variable" = row.names(data.pca$c1), "CS1" = data.pca$c1)
-  row.names(cs1) <- NULL
+  cs1 <- data.frame("Variable" = row.names(data.pca$c1),
+                    "CS1" = data.pca$c1)
   names(cs1)[2:ncol(cs1)] <- paste0("CS", 1:(ncol(cs1)-1))
   cs1 <- cs1[order(-abs(cs1[, 2])),]
   row.names(cs1) <- NULL
   # Resampling of raster
   if(resample) {
-    rast <- r_rsmp(pnt2rstr(sp.pca, "CS1"), fact = 5)
+    rast <- r_rsmp(pnt2rstr(sp.pca, "CS1"), fact = 5, "cubic")
   } else {
     rast <- pnt2rstr(sp.pca, "CS1")
   }
@@ -1833,7 +1829,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1845,7 +1841,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1857,7 +1853,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1869,7 +1865,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1881,7 +1877,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
+    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1893,7 +1889,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1980,7 +1976,7 @@ df_impute <- function(dt.frm, n.neig = 2) {
 }
 
 # Raster resampling using GdalUtils
-r_rsmp <- function(r.layer, fact = 3) {
+r_rsmp <- function(r.layer, fact, method) {
   if (!inherits(r.layer, "Raster")) {
     stop("sp.layer isn't a Raster* object")
   }
@@ -1996,55 +1992,75 @@ r_rsmp <- function(r.layer, fact = 3) {
   cl.sz <- res(r.layer) / fact
   # Project raster with cubic convolution resampling
   rsmp.rstr <- gdalwarp(srcfile = tmp1, dstfile = tmp2, tr = cl.sz,
-                        r = "cubic", output_Raster = T)
+                        r = method, output_Raster = T)
   # Assign back band names
   names(rsmp.rstr) <- bnd.nms
   return(rsmp.rstr)
 }
 
+# Calculate modal value of numeric vector
 Mode <- function(x, na.rm = T) {
+  # If selected remove NAs
   if(na.rm){
     x = x[!is.na(x)]
   }
+  # Get unque values
   ux <- unique(x)
+  # Calculate mode
   x.mode <- ux[which.max(tabulate(match(x, ux)))]
   return(x.mode)
 }
 
+# Get UTM zone from a spatial object
 utm_zone <- function(sp.layer) {
   if (!inherits(sp.layer, "Spatial")){
     stop("sp.layer isn't a Spatial* object")
   }
+  # Calculate centroid of object
   sp.cent <- geo_centroid(sp.layer)
+  # Get longitude of centroid
   long <- sp.cent[2]
   names(long) <- NULL
+  # Calculate UTM zone
   utm.zn <- (floor((long + 180) / 6) %% 60) + 1
   return(utm.zn)
 }
 
+# Clean a SpatialPolygonsDataFrame with standard deviations
+# from selected variables
 sd_cln <- function(sp.layer, cln.cols, mult = 2.5) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")){
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
+  # For each variable in SPDF...
   for (col in cln.cols) {
+    # Check its existence
     if (!col %in% names(sp.layer)) {
       stop(gettextf("%s is not present in the data.frame", col))
     }
+    # Get variable values
     vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, col]), col]
+    # Calculate mean
     mn <- mean(vrbl.dt)
+    # Calculate standard deviation
     sd <- sd(vrbl.dt)
+    # Define upper and lower limits
     lim <- c(mn - mult * sd, mn + mult * sd)
+    # Remove points according to those limits
     sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
   }
   return(sp.layer)
 }
 
+# Convert SpatialPolygonsDataFrame to SpatialPointsDataFrame with centroids
 pol2pnt <- function(sp.layer) {
   if (!inherits(sp.layer, "SpatialPolygonsDataFrame")){
     stop("sp.layer isn't a SpatialPolygonsDataFrame object")
   }
   require(rgeos)
+  # Calculate centroid/s of polygon/s
   sp.cnt <- gCentroid(sp.layer, byid = T, id = 1:length(sp.layer))
+  # Add data to centroids
   sp.cnt2 <- SpatialPointsDataFrame(sp.cnt, data.frame(sp.layer@data,
                                                        row.names = 1:length(sp.layer),
                                                        stringsAsFactors = F),
@@ -2052,9 +2068,31 @@ pol2pnt <- function(sp.layer) {
   return(sp.cnt2)
 }
 
+# Raster resampling using GdalUtils
+r_proj <- function(r.layer, target.crs, method) {
+  if (!inherits(r.layer, "Raster")) {
+    stop("sp.layer isn't a Raster* object")
+  }
+  require(gdalUtils)
+  # Store band names for future use
+  bnd.nms <- names(r.layer)
+  # Generate temp file names
+  tmp1 <- tempfile(fileext = ".tif")
+  tmp2 <- tempfile(fileext = ".tif")
+  # Write temporary raster
+  writeRaster(r.layer, filename = tmp1)
+  # Project raster with cubic convolution resampling
+  prj.rstr <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = target.crs,
+                       r = method, output_Raster = T)
+  # Assign back band names
+  names(prj.rstr) <- bnd.nms
+  return(prj.rstr)
+}
+
 save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
      rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone, sd_cln, pol2pnt,
+     r_proj,
      file = "~/SIG/Geo_util/Functions.RData")
