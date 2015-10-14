@@ -756,9 +756,10 @@ mz_smth <- function(sp.layer, area = 2500) {
     sp.layer <- spTransform(sp.layer, prj.crs)
   }
   # Check wether GRASS is running, else initialize
+  grass.dirs <- grep("GRASS", list.dirs("C:/Program Files (x86)", recursive = F), value = T)
+  grs.pth <- grass.dirs[length(grass.dirs)]
   if (nchar(Sys.getenv("GISRC")) == 0) {
-    initGRASS(gisBase = "c:/Program Files (x86)/GRASS GIS 7.0.0",
-              override = TRUE)
+    initGRASS(gisBase = grs.pth, home = tempdir(), override = T)
   }
   # Convert multipart to singlepart
   #sp.layer <- disaggregate(sp.layer)
