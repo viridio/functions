@@ -1580,31 +1580,91 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
 }
 
 # Convert raster to polygons
-rstr2pol <- function(raster) {
-  require(rgdal)
-  require(RSAGA)
-  if (!inherits(raster, "Raster")) {
-    stop("sp.layer isn't a Raster* object")
+rstr2pol <- function(r.layer) {
+  if (!inherits(r.layer, "Raster")) {
+    stop("r.layer isn't a Raster* object")
   }
-  # Create temporary files
-  tmp.rstr <- tempfile(fileext = ".tif")
-  writeRaster(raster, tmp.rstr)
-  tmp.sgrd <- tempfile(fileext = ".sgrd")
-  tmp.shp <- tempfile(fileext = ".shp")
-  # Convert tif to sgrd for SAGA
-  rsaga.import.gdal(tmp.rstr, tmp.sgrd, show.output.on.console = F)
-  # Convert grid to polygons
-  rsaga.geoprocessor("shapes_grid", module = 6,
-                     param = list(GRID = tmp.sgrd,
-                                  POLYGONS = tmp.shp,
-                                  SPLIT = 1),
-                     show.output.on.console = F)
-  # Read the generated shapefile
-  sp.pol <- read_shp(tmp.shp)
-  # Leave in the data frame only only zone information
-  sp.pol@data <- data.frame(layer = as.numeric(sp.pol$NAME),
-                            stringsAsFactors = F)
-  return(sp.pol)
+  require(raster)
+  # Define temporary shapefile
+  out.shp <- tempfile()
+  # Get only RAsterLayer to work with
+  if (inherits(r.layer, c("RasterBrick", "RasterStack"))) {
+    rast <- r.layer[[1]]
+  } else {
+    rast <- r.layer
+  }
+  # Get raster name for further use
+  r.nms <- names(rast)
+  # Try to find qgis instalations
+  qgis.dir <- grep("qgis", value = T, ignore.case = T,
+                   c(list.dirs("c:/Program Files", recursive = F),
+                     list.dirs("c:/Program Files (x86)", recursive = F)))
+  # ...and assign OSGeo4W batch file
+  if (length(qgis.dir) > 0) {
+    qgis.osgeo <- normalizePath(paste0(qgis.dir[length(qgis.dir)], "/OSGeo4W.bat"))
+  } else {
+    qgis.osgeo <- ""
+  }
+  # Create vector of possible gdal executables
+  osgeo.files <- c("C:\\OSGeo4W64\\OSGeo4W.bat", qgis.osgeo)
+  if (any(file.exists(osgeo.files))) {
+    osgeo.bat <- osgeo.files[which(file.exists(osgeo.files) == T)[1]]
+    # Write temporary raster
+    writeRaster(rast, {f <- tempfile(fileext = ".tif")})
+    # Get raster path
+    rastpath <- normalizePath(f)
+    # Convert to polygons
+    system2(osgeo.bat, stdout = F,
+            args = (sprintf('"%1$s" "%2$s" -f "%3$s" "%4$s.shp"',
+                            "gdal_polygonize", rastpath, "ESRI Shapefile", out.shp)))
+    # Read the generated shapefile
+    sp.pol <- read_shp(out.shp)
+    # Write back raster names
+    names(sp.pol@data)[1] <- r.nms
+    return(sp.pol)
+  } else {
+    cat("No GDAL instalation found, looking for SAGA GIS")
+    require(RSAGA)
+    # Search for available SAGA available instalations
+    def.env <- rsaga.env()
+    saga.dir <- grep("sagsa", normalizePath(list.dirs("C:/", recursive = F)),
+                     ignore.case = T, value = T)
+    if (length(saga.dir) == 0 && is.null(def.env)) {
+      stop("No SAGA GIS or GDAL binaries found, try using rasterToPolygons")
+    }
+    # Define SAGA environment
+    if (is.null(def.env)) {
+      saga.env <- rsaga.env(path = saga.dir)
+    } else {
+      saga.env <- def.env
+    }
+    # Define temporary rasters and shapefile
+    tmp.rst <- tempfile()
+    tmp.grd <- tempfile()
+    # Write temporary raster in ESRI format
+    writeRaster(rast, tmp.rst, format = "ascii", NAflag = -99999,
+                datatype =  "FLT4S", overwrite = T)
+    # Converto from ESRI format to SAGA format
+    rsaga.geoprocessor("io_grid", module = 1,
+                       param = list(GRID = tmp.grd,
+                                    FILE = paste0(tmp.rst, ".asc"),
+                                    GRID_TYPE = 2,
+                                    NODATA = 1,
+                                    NODATA_VAL = -99999),
+                       show.output.on.console = F, env = saga.env)
+    # Convert to polygons
+    rsaga.geoprocessor("shapes_grid", module = 6,
+                       param = list(GRID = paste0(tmp.grd, ".sgrd"),
+                                    POLYGONS = out.shp,
+                                    SPLIT = 1),
+                       show.output.on.console = F, env = saga.env)
+    # Read the generated shapefile
+    sp.pol <- read_shp(out.shp)
+    # Leave in the data frame only only zone information
+    sp.pol@data <- sp.pol@data[1]
+    names(sp.pol@data)[1] <- r.nms
+    return(sp.pol)
+  }
 }
 
 # Report creation
