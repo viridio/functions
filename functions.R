@@ -319,9 +319,8 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
 }
 
 #Function to reclassify a raster in n classes by jenks
-rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
-                      style = "fisher") {
-  if (!inherits(raster.lyr, "Raster")){
+rstr_rcls <- function(r.layer, n.class = 3, val = 1:n.class, style = "kmeans") {
+  if (!inherits(r.layer, "Raster")){
     stop("Input object isn't a Raster* object")
   }
   if (n.class != length(val)) {
@@ -331,14 +330,14 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
   require(raster)
   nw.vls <- val
   # Cut the data in the selected number of classes
-  cut.vals <- classIntervals(raster.lyr[!is.na(raster.lyr)],
+  cut.vals <- classIntervals(r.layer[!is.na(r.layer)],
                              n = n.class, style = style)$brks
   # Reclassification matrix
   mat <- as.matrix(data.frame(from = cut.vals[1:n.class],
                               to = cut.vals[2:(n.class + 1)],
                               beco = nw.vls))
   # Reclassification according to matrix
-  raster.rcls <- reclassify(raster.lyr, mat, include.lowest = T)
+  raster.rcls <- reclassify(r.layer, mat, include.lowest = T)
   return(raster.rcls)
 }
 
@@ -794,7 +793,7 @@ mz_smth <- function(sp.layer, area = 3000) {
   # Read back cleaned layer
   zm.fnl <- readVECT(zm.gnrl)
   # If no CRS, define one
-  if (is.na(zm.fnl@proj4string)) {
+  if (is.na(proj4string(zm.fnl))) {
     proj4string(zm.fnl) <- prj.crs
   }
   # Remove 'cat' column from data.frame
@@ -880,7 +879,7 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
-  if (!GM & !LM) {
+  if (!any(GM, LM)) {
     cat("WARNING: no cleaning performed, select GM, LM or both")
     return(sp.layer)
   }
@@ -933,7 +932,7 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
     # Get rows wheres indices are significative
     lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
   }
-  if (GM & LM) {
+  if (all(GM, LM)) {
     # Get the unique rows to delete
     all.out <- unique(c(mp.out, lm.out))
   } else if(GM) {
@@ -1580,7 +1579,7 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
 }
 
 # Convert raster to polygons
-rstr2pol <- function(r.layer) {
+rstr2pol <- function(r.layer, gdal = T) {
   if (!inherits(r.layer, "Raster")) {
     stop("r.layer isn't a Raster* object")
   }
@@ -1593,6 +1592,8 @@ rstr2pol <- function(r.layer) {
   } else {
     rast <- r.layer
   }
+  # Get raster CRS
+  orig.crs <- CRS(proj4string(rast))
   # Get raster name for further use
   r.nms <- names(rast)
   # Try to find qgis instalations
@@ -1607,7 +1608,7 @@ rstr2pol <- function(r.layer) {
   }
   # Create vector of possible gdal executables
   osgeo.files <- c("C:\\OSGeo4W64\\OSGeo4W.bat", qgis.osgeo)
-  if (any(file.exists(osgeo.files))) {
+  if (any(file.exists(osgeo.files)) && gdal) {
     osgeo.bat <- osgeo.files[which(file.exists(osgeo.files) == T)[1]]
     # Write temporary raster
     writeRaster(rast, {f <- tempfile(fileext = ".tif")})
@@ -1623,7 +1624,6 @@ rstr2pol <- function(r.layer) {
     names(sp.pol@data)[1] <- r.nms
     return(sp.pol)
   } else {
-    cat("No GDAL instalation found, looking for SAGA GIS")
     require(RSAGA)
     # Search for available SAGA available instalations
     def.env <- rsaga.env()
@@ -1660,6 +1660,10 @@ rstr2pol <- function(r.layer) {
                        show.output.on.console = F, env = saga.env)
     # Read the generated shapefile
     sp.pol <- read_shp(out.shp)
+    # If no CRS, define one
+    if (is.na(proj4string(sp.pol))) {
+      proj4string(sp.pol) <- orig.crs
+    }
     # Leave in the data frame only only zone information
     sp.pol@data <- sp.pol@data[1]
     names(sp.pol@data)[1] <- r.nms
@@ -2153,7 +2157,7 @@ pol2pnt <- function(sp.layer) {
   return(sp.cnt2)
 }
 
-# Raster resampling using GdalUtils
+# Raster projecting using GdalUtils
 r_proj <- function(r.layer, target.crs, method) {
   if (!inherits(r.layer, "Raster")) {
     stop("sp.layer isn't a Raster* object")
