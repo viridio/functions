@@ -221,23 +221,31 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
   r.stk2@data <- round(r.stk2@data, 2)
   # Remove points with NAs
   r.stk2 <- r.stk2[complete.cases(r.stk2@data),]
-  # Convert to raster if desired
+  # Return raster
   if (obj.fmt == "raster") {
-    r.stk2 <- pnt2rstr(r.stk2)
-  }
-  # Project object
-  if (proj.obj) {
-    if (inherits(r.stk2, "Raster")) {
+    r.stk3 <- pnt2rstr(r.stk2)
+    if (proj.obj) {
       # Project raster with cubic convolution resampling
-      r.stk2 <- r_proj(r.stk2, prj.crs, "cubic")
-      names(r.stk2) <- nw.nms
+      stk.prj <- r_proj(r.stk3, prj.crs, "cubic")
+      return(stk.prj)
+    } else {
+      # Return raster in GCS
+      return(r.stk3)
     }
-    if (inherits(r.stk2, "Spatial")) {
-      # Project points
-      r.stk2 <- spTransform(x = r.stk2, CRSobj = prj.crs)
+  } else {
+    # Return spatial points
+    if (proj.obj) {
+      # Convert to raster
+      r.stk3 <- pnt2rstr(r.stk2)
+      # Project raster with cubic convolution resampling
+      stk.prj <- r_proj(r.stk3, prj.crs, "cubic")
+      # Convert to points
+      stk.pnt <- rasterToPoints(stk.prj, spatial = T)
+      return(stk.pnt)
+    } else {
+      return(r.stk2)
     }
   }
-  return(r.stk2)
 }
 
 # Get SRTM DEM inside a SpatialPolygons object
