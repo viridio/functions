@@ -1627,7 +1627,7 @@ rstr2pol <- function(r.layer, gdal = T) {
     require(RSAGA)
     # Search for available SAGA available instalations
     def.env <- rsaga.env()
-    saga.dir <- grep("sagsa", normalizePath(list.dirs("C:/", recursive = F)),
+    saga.dir <- grep("saga", normalizePath(list.dirs("C:/", recursive = F)),
                      ignore.case = T, value = T)
     if (length(saga.dir) == 0 && is.null(def.env)) {
       stop("No SAGA GIS or GDAL binaries found, try using rasterToPolygons")
