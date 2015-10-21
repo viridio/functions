@@ -55,7 +55,7 @@ for (a in seq_along(hgt.lst)) {
   m <- matrix(c(e[1], e[1], e[2], e[2],
                 e[3], e[4], e[4], e[3]),
               ncol = 2)
-  b <- spPolygons(m, crs = proj4string(r),
+  b <- spPolygons(m, crs = geo.str,
                   attr = data.frame(LL = sub(".hgt", "", basename(hgt.lst[a])),
                                     stringsAsFactors = F))
   srtm.pol[a] <- b
