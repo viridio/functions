@@ -764,19 +764,20 @@ mz_smth <- function(sp.layer, area = 3000) {
     library(rgdal)
     sp.layer <- spTransform(sp.layer, prj.crs)
   }
-  # Get available GRASS instalations
-  grass.dirs <- grep("GRASS", list.dirs("C:/Program Files (x86)", recursive = F), value = T)
-  if (length(grass.dirs) == 0) {
-    stop("No GRASS GIS instalations found.")
+  # Try to find GRASS instalations
+  grass.dir <- grep("grass.*7", value = T, ignore.case = T,
+                   c(list.dirs("C:/OSGeo4W64/apps", recursive = F),
+                     list.dirs("c:/Program Files (x86)", recursive = F)))
+  if (length(grass.dir) == 0) {
+    stop("No GRASS GIS 7 directory found")
   }
   # Get latest installed version
-  grs.pth <- grass.dirs[length(grass.dirs)]
+  grass.path <- grass.dir[length(grass.dir)]
   # Check wether GRASS is running, else initialize
   if (nchar(Sys.getenv("GISRC")) == 0) {
-    initGRASS(gisBase = grs.pth, home = tempdir(), override = T)
+    initGRASS(gisBase = grass.path, home = tempdir(), override = T)
   }
   # Convert multipart to singlepart
-  #sp.layer <- disaggregate(sp.layer)
   zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
   # Convert name 'layer' to 'Zone'
   names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
