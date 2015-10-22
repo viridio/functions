@@ -249,7 +249,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
 }
 
 # Get SRTM DEM inside a SpatialPolygons object
-dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
+dem_srtm <- function(sp.layer, buff = 30, format = "raster", proj.obj = F) {
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
@@ -268,6 +268,10 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
     # Create buffer of polygon for border effect
     sp.layer <- gBuffer(sp.comm, width = -buff)
     sp.layer <- spTransform(sp.layer, geo.str)
+  } else {
+    if (is.projected(sp.layer)) {
+      sp.layer <- spTransform(sp.layer, geo.str)
+    }
   }
   # Get on which srtm polygon the layer intersects
   r.pr <- srtm_pr(sp.layer)
@@ -303,17 +307,16 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   }
   # If selected, project object
   if (proj.obj) {
+    # Project Raster
+    msc.prj <- r_proj(msc, prj.crs, "cubic")
     if (format != "raster"){
       # Return projected SpatialPoints
-      msc.pnt <- rasterToPoints(msc, spatial = T)
-      msc.p <- spTransform(msc.pnt, CRSobj = prj.crs)
-      names(msc.p) <- "elev"
-      return(msc.p)
+      msc.pnt <- rasterToPoints(msc.prj, spatial = T)
+      names(msc.pnt) <- "elev"
+      return(msc.pnt)
     } else {
-      # Return projected Raster
-      msc.p <- r_proj(msc, prj.crs, "cubic")
-      names(msc.p) <- "elev"
-      return(msc.p)
+      names(msc.prj) <- "elev"
+      return(msc.prj)
     }
   }
   if (format != "raster") {
@@ -323,6 +326,7 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
     return(msc.pnt)
   }
   # Return raster in Lat-Lon
+  names(msc) <- "elev"
   return(msc)
 }
 
