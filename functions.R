@@ -32,6 +32,9 @@ swi_cols <- colorRampPalette(c("#C2523C", "#EDA113", "#FFFF00", "#00DB00",
 # CEC color ramp
 cec_cols <- colorRampPalette(c("#BA1414", "#FFFFBF", "#369121"), space = "Lab")
 
+# Vegetation index color ramp
+vi_cols <- colorRampPalette(c("#E0E0E0", "#8A6F45", "#AACC66", "#184D00"), space = "Lab")
+
 # Build landsat list of polygons for matching scenes
 lndst_01 <- read_shp("~/SIG/Geo_util/raster/arg/lndst_scn_g")
 for (a in names(lndst_01@data)) {
@@ -760,7 +763,7 @@ grd_m <- function(sp.layer, dist = 10) {
 }
 
 # Smooth SpatialPolygon of management zones
-mz_smth <- function(sp.layer, area = 3000) {
+mz_smth <- function(sp.layer, area = 3000, gener = F) {
   if (!inherits(sp.layer, c("SpatialPolygons", "Raster"))) {
     stop("sp.layer isn't a SpatialPolygons* or Raster* object")
   }
@@ -795,14 +798,18 @@ mz_smth <- function(sp.layer, area = 3000) {
   names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
   # Write GRASS vector
   writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
-  zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-  # Smooth lines of polygons
-#   execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
-#             output = zm.gnrl, method = "snakes", threshold = 1)
-#   zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+  zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
   # Remove small/sliver polygons
   execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.pol,
-            output = zm.gnrl, tool = "rmarea", threshold = area)
+            output = zm.cln, tool = "rmarea", threshold = area)
+  if (gener) {
+    zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+    # Smooth lines of polygons
+    execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.cln,
+              output = zm.gnrl, method = "snakes", threshold = 1)
+  } else {
+    zm.gnrl <- zm.cln
+  }
   # Read back cleaned layer
   zm.fnl <- readVECT(zm.gnrl)
   # If no CRS, define one
@@ -2196,5 +2203,5 @@ save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
      rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone, sd_cln, pol2pnt,
-     r_proj,
+     r_proj, vi_cols,
      file = "~/SIG/Geo_util/Functions.RData")
