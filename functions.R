@@ -32,6 +32,9 @@ swi_cols <- colorRampPalette(c("#C2523C", "#EDA113", "#FFFF00", "#00DB00",
 # CEC color ramp
 cec_cols <- colorRampPalette(c("#BA1414", "#FFFFBF", "#369121"), space = "Lab")
 
+# Vegetation index color ramp
+vi_cols <- colorRampPalette(c("#E0E0E0", "#8A6F45", "#AACC66", "#184D00"), space = "Lab")
+
 # Build landsat list of polygons for matching scenes
 lndst_01 <- read_shp("~/SIG/Geo_util/raster/arg/lndst_scn_g")
 for (a in names(lndst_01@data)) {
@@ -55,7 +58,7 @@ for (a in seq_along(hgt.lst)) {
   m <- matrix(c(e[1], e[1], e[2], e[2],
                 e[3], e[4], e[4], e[3]),
               ncol = 2)
-  b <- spPolygons(m, crs = proj4string(r),
+  b <- spPolygons(m, crs = geo.str,
                   attr = data.frame(LL = sub(".hgt", "", basename(hgt.lst[a])),
                                     stringsAsFactors = F))
   srtm.pol[a] <- b
@@ -221,36 +224,35 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
   r.stk2@data <- round(r.stk2@data, 2)
   # Remove points with NAs
   r.stk2 <- r.stk2[complete.cases(r.stk2@data),]
-  # Convert to raster if desired
+  # Return raster
   if (obj.fmt == "raster") {
-    r.stk2 <- pnt2rstr(r.stk2)
-  }
-  # Project object
-  if (proj.obj) {
-    if (inherits(r.stk2, "Raster")) {
-      require(gdalUtils)
-      # Generate temp file names
-      tmp1 <- tempfile(fileext = ".tif")
-      tmp2 <- tempfile(fileext = ".tif")
-      # Write temporary raster
-      writeRaster(r.stk2, filename = tmp1)
+    r.stk3 <- pnt2rstr(r.stk2)
+    if (proj.obj) {
       # Project raster with cubic convolution resampling
-      r.stk2 <- gdalwarp(srcfile = tmp1, dstfile = tmp2,
-                         t_srs = prj.crs,
-                         r = "cubic", output_Raster = T)
-      names(r.stk2) <- nw.nms
+      stk.prj <- r_proj(r.stk3, prj.crs, "cubic")
+      return(stk.prj)
+    } else {
+      # Return raster in GCS
+      return(r.stk3)
     }
-    if (inherits(r.stk2, "Spatial")) {
-      # Project points
-      r.stk2 <- spTransform(x = r.stk2,
-                            CRSobj = prj.crs)
+  } else {
+    # Return spatial points
+    if (proj.obj) {
+      # Convert to raster
+      r.stk3 <- pnt2rstr(r.stk2)
+      # Project raster with cubic convolution resampling
+      stk.prj <- r_proj(r.stk3, prj.crs, "cubic")
+      # Convert to points
+      stk.pnt <- rasterToPoints(stk.prj, spatial = T)
+      return(stk.pnt)
+    } else {
+      return(r.stk2)
     }
   }
-  return(r.stk2)
 }
 
-#Function to get and filter srtm images from selected lat/long
-dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
+# Get SRTM DEM inside a SpatialPolygons object
+dem_srtm <- function(sp.layer, buff = 30, format = "raster", proj.obj = F) {
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygon* object")
   }
@@ -269,18 +271,28 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
     # Create buffer of polygon for border effect
     sp.layer <- gBuffer(sp.comm, width = -buff)
     sp.layer <- spTransform(sp.layer, geo.str)
+  } else {
+    if (is.projected(sp.layer)) {
+      sp.layer <- spTransform(sp.layer, geo.str)
+    }
   }
   # Get on which srtm polygon the layer intersects
   r.pr <- srtm_pr(sp.layer)
-  # Load and mask each raster
+  # For each raster that matches the coordinates do...
   for (b in seq_along(r.pr)) {
+    # Load raster
     r <- raster(paste0("~/SIG/Geo_util/raster/arg/srtm_1s/", r.pr[b], ".hgt"))
+    # Assign GCS
     proj4string(r) <- geo.str
+    # Crop raster with layer extent
     crp <- crop(r, sp.layer)
+    # Mask cropped raster with polygon
     msk <- mask(crp, sp.layer)
+    # Assign specfic name to masked raster
     assign(paste0("rmsk", b), msk)
     rm(b, r, crp, msk)
   }
+  # If lays in more than one SRTM scene build mosaic
   if (length(r.pr) > 1) {
     # Build a first mosaic from the first two
     msc <- mosaic(rmsk1, rmsk2, fun = mean)
@@ -296,26 +308,18 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
   } else {
     msc <- rmsk1
   }
+  # If selected, project object
   if (proj.obj) {
+    # Project Raster
+    msc.prj <- r_proj(msc, prj.crs, "cubic")
     if (format != "raster"){
       # Return projected SpatialPoints
-      msc.pnt <- rasterToPoints(msc, spatial = T)
-      msc.p <- spTransform(msc.pnt, CRSobj = prj.crs)
-      names(msc.p) <- "elev"
-      return(msc.p)
+      msc.pnt <- rasterToPoints(msc.prj, spatial = T)
+      names(msc.pnt) <- "elev"
+      return(msc.pnt)
     } else {
-      # Return projected Raster
-      require(gdalUtils)
-      # Generate temp file names
-      tmp1 <- tempfile(fileext = ".tif")
-      tmp2 <- tempfile(fileext = ".tif")
-      # Write temporary raster
-      writeRaster(msc, filename = tmp1)
-      # Project raster with cubic convolution resampling
-      msc.p <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = prj.crs,
-                        r = "cubic", output_Raster = T)
-      names(msc.p) <- "elev"
-      return(msc.p)
+      names(msc.prj) <- "elev"
+      return(msc.prj)
     }
   }
   if (format != "raster") {
@@ -325,13 +329,13 @@ dem_srtm <- function(sp.layer, buff = 30, format = "point", proj.obj = T) {
     return(msc.pnt)
   }
   # Return raster in Lat-Lon
+  names(msc) <- "elev"
   return(msc)
 }
 
 #Function to reclassify a raster in n classes by jenks
-rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
-                      style = "fisher") {
-  if (!inherits(raster.lyr, "Raster")){
+rstr_rcls <- function(r.layer, n.class = 3, val = 1:n.class, style = "kmeans") {
+  if (!inherits(r.layer, "Raster")){
     stop("Input object isn't a Raster* object")
   }
   if (n.class != length(val)) {
@@ -341,20 +345,20 @@ rstr_rcls <- function(raster.lyr, n.class = 3, val = 1:n.class,
   require(raster)
   nw.vls <- val
   # Cut the data in the selected number of classes
-  cut.vals <- classIntervals(raster.lyr[!is.na(raster.lyr)], n = n.class, style = style)$brks
+  cut.vals <- classIntervals(r.layer[!is.na(r.layer)],
+                             n = n.class, style = style)$brks
   # Reclassification matrix
   mat <- as.matrix(data.frame(from = cut.vals[1:n.class],
                               to = cut.vals[2:(n.class + 1)],
                               beco = nw.vls))
   # Reclassification according to matrix
-  raster.rcls <- reclassify(raster.lyr, mat, include.lowest = T)
+  raster.rcls <- reclassify(r.layer, mat, include.lowest = T)
   return(raster.rcls)
 }
 
-#Rsaga DEM Covariates
+# DEM covariates from SAGA and Taudem
 dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.rst = T) {
-  if (!inherits(DEM.layer, "SpatialPointsDataFrame") &
-      !inherits(DEM.layer, "Raster")) {
+  if (!inherits(DEM.layer, c("SpatialPointsDataFrame", "Raster"))) {
     stop("DEM.layer isn't a SpatialPointsDataFrame or Raster* object")
   }
   require(sp)
@@ -493,7 +497,7 @@ dem_cov <- function(DEM.layer, dem.attr = "DEM", deriv = "all", smth = T, save.r
   return(base.lyr)
 }
 
-# Defining the MBA interpolation function
+# Interpolation function
 int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F,
                    dist = 20, clean = T, krig = F) {
   if (!inherits(base.pnts, "SpatialPoints") |
@@ -597,11 +601,14 @@ int_fx <- function(base.pnts, obs.pnts, vrbl, moran = F,
 
 # plant population response by hybrid
 hyb_pp <- function(hybrid, exp.yld, step = 1235, biol = F) {
+  # Get hybrid's plant population response model Betas
   num.param <- as.numeric(hyb.param[1:8, hybrid])
+  # Get coefficients for biological PP correction
   num.param2 <- as.numeric(hyb.param[9:11, hybrid])
   pl.pop <- vector()
-  min.kn.yld <- 3.5
+  # Go for inbreds or hybrids
   if (hyb.param[9, hybrid] == "L") {
+    # Create vector of possible PPs according to "step"
     seed.rates <- seq(30000, 150000, step)
     for (a in seq_along(exp.yld)) {
       hyb.pp <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
@@ -613,40 +620,54 @@ hyb_pp <- function(hybrid, exp.yld, step = 1235, biol = F) {
     }
     return(pl.pop)
   } else {
+    # Define minimum yield at which the model works well
+    min.kn.yld <- 3.5
+    # Define minimum possible PP
     pp.min <- 30000
+    # Compute minimum known PP
     pp.kn <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
                  (num.param[5] * min.kn.yld - num.param[5] * num.param[8]) -
                  2 * num.param[6] * num.param[7] * (num.param[8] - min.kn.yld)) /
                 (2 * num.param[3] + 2 * num.param[6] * (min.kn.yld - num.param[8]))) * 10000
+    # Correct or not biological min known PP
     if (!biol) {
       pp.kn <- pp.kn * ((100 - (num.param2[1] * min.kn.yld * min.kn.yld + num.param2[2] *
                                   min.kn.yld + num.param2[3]))/100)
     }
+    # Create vector of possible PPs according to "step"
     seed.rates <- seq(pp.min + step, 150000, step)
+    # Define linear model to calculate PP below min.kn.yld
     pp.lm <- lm(y ~ x, data = data.frame(x = c(3, min.kn.yld), y = c(pp.min, pp.kn)))
+    # For each expected yield do...
     for (a in seq_along(exp.yld)) {
+      # If below absolute minimum assign absolute min PP
       if (exp.yld[a] < 3) {
         hyb.pp <- pp.min
         hyb.corr <- hyb.pp
       }
+      # If between absolute minimum and minkn.yld apply linear model
       if (exp.yld[a] >= 3 & exp.yld[a] < min.kn.yld) {
         hyb.pp <- predict(pp.lm, newdata = data.frame(x = exp.yld[a]))
         hyb.pp <- seed.rates[which(abs(seed.rates - hyb.pp) == min(abs(seed.rates - hyb.pp)))]
         hyb.corr <- hyb.pp
       }
+      # If within the range of yield where the model works apply PP response model
       if (exp.yld[a] >= min.kn.yld) {
         hyb.pp <- ((-num.param[2] + 2 * num.param[3] * num.param[7] -
                       (num.param[5] * exp.yld[a] - num.param[5] * num.param[8]) -
                       2 * num.param[6] * num.param[7] * (num.param[8] - exp.yld[a])) /
                      (2 * num.param[3] + 2 * num.param[6] * (exp.yld[a] - num.param[8]))) * 10000
+        # Correct or not biological PP
         if (!biol) {
           hyb.corr <- hyb.pp * ((100 - (num.param2[1] * exp.yld[a] * exp.yld[a] + num.param2[2] *
                                           exp.yld[a] + num.param2[3]))/100)
         } else {
           hyb.corr <- hyb.pp
         }
+        # Assing calculated PP to nearest step PP
         hyb.corr <- seed.rates[which(abs(seed.rates - hyb.corr) == min(abs(seed.rates - hyb.corr)))]
       }
+      # Add each to vector
       pl.pop[a] <- hyb.corr
     }
     return(pl.pop)
@@ -680,7 +701,7 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
   } else {
     sp.poly <- sp.layer
   }
-  # The next steps according to the prediction model selet the used variables
+  # The next steps according to the prediction model select the used variables
   if (class(pred.model)[1] == "randomForest") {
     require(randomForest)
     usd.var <- dimnames(pred.model$importance)[[1]]
@@ -715,6 +736,7 @@ presc_grid <- function(sp.layer, pred.model, hybrid, points = T,
   return(sp.poly)
 }
 
+# Create regularly spaced SpatialPointDF grid for interpolation
 grd_m <- function(sp.layer, dist = 10) {
   if (!inherits(sp.layer, "SpatialPolygons")) {
     stop("sp.layer isn't a SpatialPolygons* object")
@@ -740,8 +762,9 @@ grd_m <- function(sp.layer, dist = 10) {
   return(grd.1)
 }
 
-mz_smth <- function(sp.layer, area = 2500) {
-  if (!inherits(sp.layer, "SpatialPolygons") & !inherits(sp.layer, "Raster")) {
+# Smooth SpatialPolygon of management zones
+mz_smth <- function(sp.layer, area = 3000, gener = F) {
+  if (!inherits(sp.layer, c("SpatialPolygons", "Raster"))) {
     stop("sp.layer isn't a SpatialPolygons* or Raster* object")
   }
   require(rgrass7)
@@ -756,30 +779,41 @@ mz_smth <- function(sp.layer, area = 2500) {
     library(rgdal)
     sp.layer <- spTransform(sp.layer, prj.crs)
   }
+  # Try to find GRASS instalations
+  grass.dir <- grep("grass.*7", value = T, ignore.case = T,
+                   c(list.dirs("C:/OSGeo4W64/apps", recursive = F),
+                     list.dirs("c:/Program Files (x86)", recursive = F)))
+  if (length(grass.dir) == 0) {
+    stop("No GRASS GIS 7 directory found")
+  }
+  # Get latest installed version
+  grass.path <- grass.dir[length(grass.dir)]
   # Check wether GRASS is running, else initialize
   if (nchar(Sys.getenv("GISRC")) == 0) {
-    initGRASS(gisBase = "c:/Program Files (x86)/GRASS GIS 7.0.0",
-              override = TRUE)
+    initGRASS(gisBase = grass.path, home = tempdir(), override = T)
   }
   # Convert multipart to singlepart
-  #sp.layer <- disaggregate(sp.layer)
   zm.pol <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
   # Convert name 'layer' to 'Zone'
   names(sp.layer) <- sub("layer", "Zone", names(sp.layer))
   # Write GRASS vector
   writeVECT(sp.layer, zm.pol, v.in.ogr_flags = "o")
-  zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
-  # Smooth lines of polygons
-#   execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.pol,
-#             output = zm.gnrl, method = "snakes", threshold = 1)
-#   zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+  zm.cln <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
   # Remove small/sliver polygons
   execGRASS("v.clean", flags = c("overwrite", "quiet"), input = zm.pol,
-            output = zm.gnrl, tool = "rmarea", threshold = area)
+            output = zm.cln, tool = "rmarea", threshold = area)
+  if (gener) {
+    zm.gnrl <- paste0(sample(letters, 1), substr(basename(tempfile()), 9, 14))
+    # Smooth lines of polygons
+    execGRASS("v.generalize", flags = c("overwrite", "quiet"), input = zm.cln,
+              output = zm.gnrl, method = "snakes", threshold = 1)
+  } else {
+    zm.gnrl <- zm.cln
+  }
   # Read back cleaned layer
   zm.fnl <- readVECT(zm.gnrl)
   # If no CRS, define one
-  if (is.na(zm.fnl@proj4string)) {
+  if (is.na(proj4string(zm.fnl))) {
     proj4string(zm.fnl) <- prj.crs
   }
   # Remove 'cat' column from data.frame
@@ -787,6 +821,7 @@ mz_smth <- function(sp.layer, area = 2500) {
   return(zm.fnl)
 }
 
+# Convert SpatialPointsDataFrame to Raster*
 pnt2rstr <- function(sp.layer, field = names(sp.layer)){
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame")
@@ -802,22 +837,23 @@ pnt2rstr <- function(sp.layer, field = names(sp.layer)){
   }
   # Check if there's more than one field to convert to raster
   if (length(field) > 1) {
-    # Create empty stack
+    # Create empty list
     rstr.lst <- list()
     rwn <- 1
     for (a in field) {
       if (a %in% names(sp.layer@data) == F) {
-        stop("field isn't an attribute in SpatialPointsDataFrame")
+        stop(gettextf("%s isn't an attribute in SpatialPointsDataFrame", a))
       }
       rstr.lst[[rwn]] <- raster(SpatialPixelsDataFrame(sp.layer, 
                                                        data = sp.layer@data[a],
                                                        proj4string = lyr.crs))
       rwn <- rwn + 1
     }
+    # Create RasterBrick from list
     sp.rstr <- brick(rstr.lst)
   } else {
     if (field %in% names(sp.layer@data) == F) {
-      stop("field isn't an attribute in SpatialPointsDataFrame")
+      stop(gettextf("%s isn't an attribute in SpatialPointsDataFrame", field))
     }
     sp.spix <- SpatialPixelsDataFrame(sp.layer,
                                       data = sp.layer@data[field],
@@ -827,16 +863,19 @@ pnt2rstr <- function(sp.layer, field = names(sp.layer)){
   return(sp.rstr)
 }
 
+# Get geographical coordinates of object centroid
 geo_centroid <- function(sp.layer){
-  if (!inherits(sp.layer, "Spatial")) {
-    stop("sp.layer isn't a Spatial* object")
+  if (!inherits(sp.layer, c("Spatial", "Raster"))) {
+    stop("sp.layer isn't a Spatial* or Raster* object")
   }
+  require(rgeos)
+  require(raster)
   lyr.crs <- CRS(proj4string(sp.layer))
-  # Get bbox corners
-  corners <- cbind(c(sp.layer@bbox[1], sp.layer@bbox[1],
-                     sp.layer@bbox[3], sp.layer@bbox[3]),
-                   c(sp.layer@bbox[2], sp.layer@bbox[4],
-                     sp.layer@bbox[4], sp.layer@bbox[2]))
+  # Get object's bounding box corner coordinates
+  ext.vec <- as.vector(extent(sp.layer))
+  corners <- cbind(c(ext.vec[1], ext.vec[1], ext.vec[2], ext.vec[2]),
+                   c(ext.vec[3], ext.vec[4], ext.vec[4], ext.vec[3]))
+  # Build spatialpolygons from bbox coordinates
   pol.bb <- Polygon(corners)
   pols.bb <- Polygons(list(pol.bb), "pol1")
   sp.pol <- SpatialPolygons(list(pols.bb),
@@ -846,7 +885,7 @@ geo_centroid <- function(sp.layer){
     library(rgdal)
     sp.pol <- spTransform(sp.pol, geo.str)
   }
-  require(rgeos)
+  # Compute centroid of box
   gcent <- gCentroid(sp.pol)
   coord <- gcent@coords
   names(coord) <- c("Lon", "Lat")
@@ -854,12 +893,13 @@ geo_centroid <- function(sp.layer){
   return(coord)
 }
 
+# Spatial outlier cleansing by Local and Global Moran's I
 moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
   require(spdep)
-  if (!GM & !LM) {
+  if (!any(GM, LM)) {
     cat("WARNING: no cleaning performed, select GM, LM or both")
     return(sp.layer)
   }
@@ -912,7 +952,7 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
     # Get rows wheres indices are significative
     lm.out <- which(lmo[, "Ii"] <= 0 | lmo[, "Pr.z...0."] <= 0.05)
   }
-  if (GM & LM) {
+  if (all(GM, LM)) {
     # Get the unique rows to delete
     all.out <- unique(c(mp.out, lm.out))
   } else if(GM) {
@@ -928,6 +968,7 @@ moran_cln <- function(sp.layer, vrbl, dist = 20, GM = F, LM = T) {
   return(spl.noznb)
 }
 
+# Automatic and failsafe variogram fitting
 var_fit <- function(sp.layer, vrbl, cln = F, plot = F){
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
@@ -1310,6 +1351,7 @@ var_cal <- function(sp.layer, var = 'OM', pdf = T, width = 10, soil = 'soil'){
   return(LMs)  
 }
 
+# Create treatment grid for strip trial from boundaries
 trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
                      n.pas = 1, random = T) {
   require(rgdal)
@@ -1423,10 +1465,8 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
   return(pol.5)
 }
 
-multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
-                                         "SWI", "EC30", "EC90", "OM",
-                                         "CEC", "EVI_mean"),
-                     n.mz = 3, dist = 20, plot = F, resample = F,
+# Compute spatial principal components and reclassify
+multi_mz <- function(sp.layer, vrbls, n.mz = 3, dist = 20, plot = F, resample = F,
                      area = 3000, style = "kmeans") {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
@@ -1470,14 +1510,14 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
     par(mfrow = c(1, 1))
   }
   # Creation of data.frame of first spatial principal componenet
-  cs1 <- data.frame("Variable" = row.names(data.pca$c1), "CS1" = data.pca$c1)
-  row.names(cs1) <- NULL
+  cs1 <- data.frame("Variable" = row.names(data.pca$c1),
+                    "CS1" = data.pca$c1)
   names(cs1)[2:ncol(cs1)] <- paste0("CS", 1:(ncol(cs1)-1))
   cs1 <- cs1[order(-abs(cs1[, 2])),]
   row.names(cs1) <- NULL
   # Resampling of raster
   if(resample) {
-    rast <- r_rsmp(pnt2rstr(sp.pca, "CS1"), fact = 5)
+    rast <- r_rsmp(pnt2rstr(sp.pca, "CS1"), fact = 5, "cubic")
   } else {
     rast <- pnt2rstr(sp.pca, "CS1")
   }
@@ -1489,7 +1529,7 @@ multi_mz <- function(sp.layer, vrbls = c("DEM", "Aspect", "CTI", "Slope",
   return(sp.pol)
 }
 
-# Function to read shapefiles with proj info
+# Read shapefiles with proj info using readShapeSpatial
 read_shp <- function(shp.file) {
   require(rgdal)
   require(maptools)
@@ -1542,7 +1582,7 @@ read_kmz <- function(kmz.file) {
   return(sp.lyr)
 }
 
-# Wrapper around writeOGR for simplification
+# Wrapper around writeOGR for simplification in writing shapefiles
 write_shp <- function(sp.layer, file.name, overwrite = F) {
   if (!inherits(sp.layer, "Spatial")) {
     stop("sp.layer isn't a Spatial* object")
@@ -1558,32 +1598,97 @@ write_shp <- function(sp.layer, file.name, overwrite = F) {
            overwrite_layer = overwrite, driver = "ESRI Shapefile")
 }
 
-# Function to convert raster to polygons
-rstr2pol <- function(raster) {
-  require(rgdal)
-  require(RSAGA)
-  if (!inherits(raster, "Raster")) {
-    stop("sp.layer isn't a Raster* object")
+# Convert raster to polygons
+rstr2pol <- function(r.layer, gdal = T) {
+  if (!inherits(r.layer, "Raster")) {
+    stop("r.layer isn't a Raster* object")
   }
-  # Create temporary files
-  tmp.rstr <- tempfile(fileext = ".tif")
-  writeRaster(raster, tmp.rstr)
-  tmp.sgrd <- tempfile(fileext = ".sgrd")
-  tmp.shp <- tempfile(fileext = ".shp")
-  # Convert tif to sgrd for SAGA
-  rsaga.import.gdal(tmp.rstr, tmp.sgrd, show.output.on.console = F)
-  # Convert grid to polygons
-  rsaga.geoprocessor("shapes_grid", module = 6,
-                     param = list(GRID = tmp.sgrd,
-                                  POLYGONS = tmp.shp,
-                                  SPLIT = 1),
-                     show.output.on.console = F)
-  # Read the generated shapefile
-  sp.pol <- read_shp(tmp.shp)
-  # Leave in the data frame only only zone information
-  sp.pol@data <- data.frame(layer = as.numeric(sp.pol$NAME),
-                            stringsAsFactors = F)
-  return(sp.pol)
+  require(raster)
+  # Define temporary shapefile
+  out.shp <- tempfile()
+  # Get only RAsterLayer to work with
+  if (inherits(r.layer, c("RasterBrick", "RasterStack"))) {
+    rast <- r.layer[[1]]
+  } else {
+    rast <- r.layer
+  }
+  # Get raster CRS
+  orig.crs <- CRS(proj4string(rast))
+  # Get raster name for further use
+  r.nms <- names(rast)
+  # Try to find qgis instalations
+  qgis.dir <- grep("qgis", value = T, ignore.case = T,
+                   c(list.dirs("c:/Program Files", recursive = F),
+                     list.dirs("c:/Program Files (x86)", recursive = F)))
+  # ...and assign OSGeo4W batch file
+  if (length(qgis.dir) > 0) {
+    qgis.osgeo <- normalizePath(paste0(qgis.dir[length(qgis.dir)], "/OSGeo4W.bat"))
+  } else {
+    qgis.osgeo <- ""
+  }
+  # Create vector of possible gdal executables
+  osgeo.files <- c("C:\\OSGeo4W64\\OSGeo4W.bat", qgis.osgeo)
+  if (any(file.exists(osgeo.files)) && gdal) {
+    osgeo.bat <- osgeo.files[which(file.exists(osgeo.files) == T)[1]]
+    # Write temporary raster
+    writeRaster(rast, {f <- tempfile(fileext = ".tif")})
+    # Get raster path
+    rastpath <- normalizePath(f)
+    # Convert to polygons
+    system2(osgeo.bat, stdout = F,
+            args = (sprintf('"%1$s" "%2$s" -f "%3$s" "%4$s.shp"',
+                            "gdal_polygonize", rastpath, "ESRI Shapefile", out.shp)))
+    # Read the generated shapefile
+    sp.pol <- read_shp(out.shp)
+    # Write back raster names
+    names(sp.pol@data)[1] <- r.nms
+    return(sp.pol)
+  } else {
+    require(RSAGA)
+    # Search for available SAGA available instalations
+    def.env <- rsaga.env()
+    saga.dir <- grep("saga", normalizePath(list.dirs("C:/", recursive = F)),
+                     ignore.case = T, value = T)
+    if (length(saga.dir) == 0 && is.null(def.env)) {
+      stop("No SAGA GIS or GDAL binaries found, try using rasterToPolygons")
+    }
+    # Define SAGA environment
+    if (is.null(def.env)) {
+      saga.env <- rsaga.env(path = saga.dir)
+    } else {
+      saga.env <- def.env
+    }
+    # Define temporary rasters and shapefile
+    tmp.rst <- tempfile()
+    tmp.grd <- tempfile()
+    # Write temporary raster in ESRI format
+    writeRaster(rast, tmp.rst, format = "ascii", NAflag = -99999,
+                datatype =  "FLT4S", overwrite = T)
+    # Converto from ESRI format to SAGA format
+    rsaga.geoprocessor("io_grid", module = 1,
+                       param = list(GRID = tmp.grd,
+                                    FILE = paste0(tmp.rst, ".asc"),
+                                    GRID_TYPE = 2,
+                                    NODATA = 1,
+                                    NODATA_VAL = -99999),
+                       show.output.on.console = F, env = saga.env)
+    # Convert to polygons
+    rsaga.geoprocessor("shapes_grid", module = 6,
+                       param = list(GRID = paste0(tmp.grd, ".sgrd"),
+                                    POLYGONS = out.shp,
+                                    SPLIT = 1),
+                       show.output.on.console = F, env = saga.env)
+    # Read the generated shapefile
+    sp.pol <- read_shp(out.shp)
+    # If no CRS, define one
+    if (is.na(proj4string(sp.pol))) {
+      proj4string(sp.pol) <- orig.crs
+    }
+    # Leave in the data frame only only zone information
+    sp.pol@data <- sp.pol@data[1]
+    names(sp.pol@data)[1] <- r.nms
+    return(sp.pol)
+  }
 }
 
 # Report creation
@@ -1833,7 +1938,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N° de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1845,7 +1950,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N° de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1857,7 +1962,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1869,7 +1974,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N° de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1881,7 +1986,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N° de observaciones", title = title) +
+    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1893,7 +1998,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N° de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1980,7 +2085,7 @@ df_impute <- function(dt.frm, n.neig = 2) {
 }
 
 # Raster resampling using GdalUtils
-r_rsmp <- function(r.layer, fact = 3) {
+r_rsmp <- function(r.layer, fact, method) {
   if (!inherits(r.layer, "Raster")) {
     stop("sp.layer isn't a Raster* object")
   }
@@ -1996,53 +2101,75 @@ r_rsmp <- function(r.layer, fact = 3) {
   cl.sz <- res(r.layer) / fact
   # Project raster with cubic convolution resampling
   rsmp.rstr <- gdalwarp(srcfile = tmp1, dstfile = tmp2, tr = cl.sz,
-                        r = "cubic", output_Raster = T)
+                        r = method, output_Raster = T)
   # Assign back band names
   names(rsmp.rstr) <- bnd.nms
   return(rsmp.rstr)
 }
 
+# Calculate modal value of numeric vector
 Mode <- function(x, na.rm = T) {
+  # If selected remove NAs
   if(na.rm){
     x = x[!is.na(x)]
   }
+  # Get unque values
   ux <- unique(x)
+  # Calculate mode
   x.mode <- ux[which.max(tabulate(match(x, ux)))]
   return(x.mode)
 }
 
+# Get UTM zone from a spatial object
 utm_zone <- function(sp.layer) {
-  if (!inherits(sp.layer, "Spatial")){
-    stop("sp.layer isn't a Spatial* object")
+  if (!inherits(sp.layer, c("Spatial", "Raster"))) {
+    stop("sp.layer isn't a Spatial* or Raster* object")
   }
+  # Calculate centroid of object
   sp.cent <- geo_centroid(sp.layer)
+  # Get longitude of centroid
   long <- sp.cent[2]
   names(long) <- NULL
+  # Calculate UTM zone
   utm.zn <- (floor((long + 180) / 6) %% 60) + 1
   return(utm.zn)
 }
 
-sd_cln <- function(sp.layer, cln.col, mult = 2.5) {
+# Clean a SpatialPolygonsDataFrame with standard deviations
+# from selected variables
+sd_cln <- function(sp.layer, cln.cols, mult = 2.5) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")){
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
-  if (!cln.col %in% names(sp.layer)) {
-    stop("Column is not present in the data.frame")
+  # For each variable in SPDF...
+  for (col in cln.cols) {
+    # Check its existence
+    if (!col %in% names(sp.layer)) {
+      stop(gettextf("%s is not present in the data.frame", col))
+    }
+    # Get variable values
+    vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, col]), col]
+    # Calculate mean
+    mn <- mean(vrbl.dt)
+    # Calculate standard deviation
+    sd <- sd(vrbl.dt)
+    # Define upper and lower limits
+    lim <- c(mn - mult * sd, mn + mult * sd)
+    # Remove points according to those limits
+    sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
   }
-  vrbl.dt <- sp.layer@data[!is.na(sp.layer@data[, cln.col]), cln.col]
-  mn <- mean(vrbl.dt)
-  sd <- sd(vrbl.dt)
-  lim <- c(mn - mult * sd, mn + mult * sd)
-  sp.layer <- sp.layer[vrbl.dt > lim[1] & vrbl.dt < lim[2],]
   return(sp.layer)
 }
 
+# Convert SpatialPolygonsDataFrame to SpatialPointsDataFrame with centroids
 pol2pnt <- function(sp.layer) {
   if (!inherits(sp.layer, "SpatialPolygonsDataFrame")){
     stop("sp.layer isn't a SpatialPolygonsDataFrame object")
   }
   require(rgeos)
+  # Calculate centroid/s of polygon/s
   sp.cnt <- gCentroid(sp.layer, byid = T, id = 1:length(sp.layer))
+  # Add data to centroids
   sp.cnt2 <- SpatialPointsDataFrame(sp.cnt, data.frame(sp.layer@data,
                                                        row.names = 1:length(sp.layer),
                                                        stringsAsFactors = F),
@@ -2050,9 +2177,31 @@ pol2pnt <- function(sp.layer) {
   return(sp.cnt2)
 }
 
+# Raster projecting using GdalUtils
+r_proj <- function(r.layer, target.crs, method) {
+  if (!inherits(r.layer, "Raster")) {
+    stop("sp.layer isn't a Raster* object")
+  }
+  require(gdalUtils)
+  # Store band names for future use
+  bnd.nms <- names(r.layer)
+  # Generate temp file names
+  tmp1 <- tempfile(fileext = ".tif")
+  tmp2 <- tempfile(fileext = ".tif")
+  # Write temporary raster
+  writeRaster(r.layer, filename = tmp1)
+  # Project raster with cubic convolution resampling
+  prj.rstr <- gdalwarp(srcfile = tmp1, dstfile = tmp2, t_srs = target.crs,
+                       r = method, output_Raster = T)
+  # Assign back band names
+  names(prj.rstr) <- bnd.nms
+  return(prj.rstr)
+}
+
 save(lndst.pol, prj_str, geo.str, scn_pr, mk_vi_stk, rstr_rcls, int_fx, dem_cov, cols,
      elev_cols, ec_cols, om_cols, swi_cols, cec_cols, presc_grid, hyb.param, hyb_pp, grd_m,
      mz_smth, pnt2rstr, geo_centroid, moran_cln, var_fit, kmz_sv, veris_import, elev_import,
      soil_import, var_cal, trat_grd, multi_mz, srtm.pol, srtm_pr, dem_srtm, read_shp, read_kmz, 
      rstr2pol, report_tdec, write_shp, df_impute, r_rsmp, Mode, utm_zone, sd_cln, pol2pnt,
+     r_proj, vi_cols,
      file = "~/SIG/Geo_util/Functions.RData")
