@@ -1935,7 +1935,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
                arrangeGrob(p7, ncol=1),
                arrangeGrob(soil.tbl, ncol = 1),
                arrangeGrob(textGrob('Pagina 4', gp = gpar(fontsize = 10), just = 'center'), ncol = 1),
-               nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5.5/10, 2/10, 0.5/10))
+               nrow = 6, heights = c(1/10, 0.5/10, 0.5/10, 5/10, 2.5/10, 0.5/10))
   dev.off()
 }
 
