@@ -2,7 +2,7 @@ load(file = "~/SIG/Geo_util/Functions.RData")
 
 prj_str <- function(zone) {
   zn.str <- paste0("+proj=utm +zone=", zone,
-                   " +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
+                   " +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
   return(CRS(zn.str))
 }
 
@@ -2130,8 +2130,11 @@ utm_zone <- function(sp.layer) {
   # Get longitude of centroid
   long <- sp.cent[2]
   names(long) <- NULL
+  # Coordinate northing
+  northing <- ifelse(sp.cent[1] < 0, " +south", "")
   # Calculate UTM zone
-  utm.zn <- (floor((long + 180) / 6) %% 60) + 1
+  utm.strp <- (floor((long + 180) / 6) %% 60) + 1
+  utm.zn <- paste0(utm.strp, northing)
   return(utm.zn)
 }
 
