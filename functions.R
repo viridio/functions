@@ -1110,14 +1110,14 @@ kmz_sv <- function(sp.layer = interp.rp, spz = spz, Rev = F){
     kml_layer(spz, 
               raster.name = 'Calidad de Sitio',
               subfolder.name='Calidad de Sitio (s/u)',
-              colour = 'Calidad',
+              colour = Class,
               colour_scale = cols(3),
               outline = F)
   } else {
     kml_layer(spz, 
               raster.name = 'Calidad de Sitio',
               subfolder.name='Calidad de Sitio (s/u)',
-              colour = 'Calidad',
+              colour = Class,
               colour_scale = rev(cols(3)),
               outline = F)
   }
