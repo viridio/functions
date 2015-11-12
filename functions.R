@@ -1573,7 +1573,7 @@ read_kmz <- function(kmz.file) {
   # Get kml working file
   wrk.fl <- list.files(tmp.dir, ".kml$", full.names = T)
   # Get name/s of layer/s in KML
-  lyr <- ogrListLayers(wrk.fl)
+  lyr <- ogrListLayers(wrk.fl[1])
   # Read the layer/s in the KML into a Spatial*DataFrame
   sp.lyr <- readOGR(wrk.fl, layer = lyr, verbose = F,
                     stringsAsFactors = F)
@@ -1938,7 +1938,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h1 <- ggplot(veris@data, aes(x = DEM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Altura (m)", y = "N? de observaciones", title = title) +
+    labs(x = "Altura (m)", y = "Num de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1950,7 +1950,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h2 <- ggplot(veris@data, aes(x = SWI)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "Indice de Humedad", y = "N? de observaciones", title = title) +
+    labs(x = "Indice de Humedad", y = "Num de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1962,7 +1962,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h3 <- ggplot(veris@data, aes(x = EC30)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECs (mS/m)", y = "N? de observaciones", title = title) +
+    labs(x = "ECs (mS/m)", y = "Num de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1974,7 +1974,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h4 <- ggplot(veris@data, aes(x = EC90)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "ECp (mS/m)", y = "N? de observaciones", title = title) +
+    labs(x = "ECp (mS/m)", y = "Num de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1986,7 +1986,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h5 <- ggplot(veris@data, aes(x = OM)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "MO (%)", y = "N? de observaciones", title = title) +
+    labs(x = "MO (%)", y = "Num de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
@@ -1998,7 +1998,7 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   h6 <- ggplot(veris@data, aes(x = CEC)) + 
     geom_histogram(fill="cornsilk", colour="grey60", size=.2) +
     theme_bw() +
-    labs(x = "CIC (meq/100g)", y = "N? de observaciones", title = title) +
+    labs(x = "CIC (meq/100g)", y = "Num de observaciones", title = title) +
     theme(title = element_text(size = 8),
           axis.text = element_text(size = 10),
           axis.title.x = element_text(size = 12, face = 'bold'),
