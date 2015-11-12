@@ -155,7 +155,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
   rwn <- 1
   for (c in vi.lst) {
     # Get the year of current image
-    scn.year <- as.numeric(substr(basename(c), 10, 13))
+    scn.year <- as.numeric(substr(basename(c), 7, 10))
     # Check if passes the year limit
     if (scn.year >= st.year) {
       r <- raster(c)
@@ -211,13 +211,15 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
     }
     # Final data.frame and brick
     df2 <- do.call(rbind, df.lst2)
+    df2$SCN <- paste0("X", df2$SCN)
     r.stk2 <- subset(r.stk, df2$SCN)
   } else {
-    r.stk2 <- subset(r.stk, df1$SCN)
+    df1$SCN <- paste0("X", df1$SCN)
+    r.stk2 <- subset(r.stk, paste0("x", df1$SCN)
   }
   # Get brick name and create new ones
   nms <- names(r.stk2)
-  nw.nms <- gsub("^", vindx, substr(nms, 10, 13))
+  nw.nms <- gsub("^", vindx, substr(nms, 8, 11))
   # Convert to SpatialPointsDF
   r.stk2 <- rasterToPoints(r.stk2, spatial = T)
   names(r.stk2) <- nw.nms
