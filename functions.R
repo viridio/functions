@@ -2,7 +2,7 @@ load(file = "~/SIG/Geo_util/Functions.RData")
 
 prj_str <- function(zone) {
   zn.str <- paste0("+proj=utm +zone=", zone,
-                   " +south +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
+                   " +datum=WGS84 +units=m +no_defs +ellps=WGS84 +towgs84=0,0,0")
   return(CRS(zn.str))
 }
 
@@ -763,7 +763,7 @@ grd_m <- function(sp.layer, dist = 10) {
 }
 
 # Smooth SpatialPolygon of management zones
-mz_smth <- function(sp.layer, area = 3000, gener = F) {
+mz_smth <- function(sp.layer, area = 3000, gener = F, gdal = T) {
   if (!inherits(sp.layer, c("SpatialPolygons", "Raster"))) {
     stop("sp.layer isn't a SpatialPolygons* or Raster* object")
   }
@@ -771,7 +771,7 @@ mz_smth <- function(sp.layer, area = 3000, gener = F) {
   require(raster)
   # If the input is a raster convert to polygons and dissolve by zone
   if (inherits(sp.layer, "Raster")) {
-    sp.layer <- rstr2pol(sp.layer)
+    sp.layer <- rstr2pol(sp.layer, gdal = gdal)
   }
   # If in WGS84 project to UTM
   prj.crs <- prj_str(utm_zone(sp.layer))
@@ -1110,44 +1110,44 @@ kmz_sv <- function(sp.layer = interp.rp, spz = spz, Rev = F){
     kml_layer(spz, 
               raster.name = 'Calidad de Sitio',
               subfolder.name='Calidad de Sitio (s/u)',
-              colour = Calidad,
+              colour = Class,
               colour_scale = cols(3),
               outline = F)
   } else {
     kml_layer(spz, 
               raster.name = 'Calidad de Sitio',
               subfolder.name='Calidad de Sitio (s/u)',
-              colour = Calidad,
+              colour = Class,
               colour_scale = rev(cols(3)),
               outline = F)
   }
-  kml_layer(rstr_lyr, 
+  kml_layer(rstr_lyr[[1]],
             raster.name = 'DEM',
             subfolder.name='DEM (m)',
             colour = 'DEM',
             colour_scale = elev_cols(255),
             plot.legend = T)
-  kml_layer(rstr_lyr, 
+  kml_layer(rstr_lyr[[2]],
             raster.name = 'Indice de Humedad',
             subfolder.name='IH (s/u)',
             colour = 'SWI',
             colour_scale = swi_cols(255))
-  kml_layer(rstr_lyr, 
+  kml_layer(rstr_lyr[[3]],
             raster.name = 'EC30',
             subfolder.name='ECa Superficial (mS/m)',
             colour = 'EC30',
             colour_scale = ec_cols(255))
-  kml_layer(rstr_lyr, 
+  kml_layer(rstr_lyr[[4]],
             raster.name = 'EC90',
             subfolder.name='ECa Profunda (mS/m)',
             colour = 'EC90',
             colour_scale = ec_cols(255))
-  kml_layer(rstr_lyr, 
+  kml_layer(rstr_lyr[[5]],
             raster.name = 'MO',
             subfolder.name='MO (%)',
             colour = 'OM',
             colour_scale = om_cols(255))
-  kml_layer(rstr_lyr, 
+  kml_layer(rstr_lyr[[6]],
             raster.name = 'CIC',
             subfolder.name='CIC (meq/100g)',
             colour = 'CEC',
@@ -1467,7 +1467,7 @@ trat_grd <- function(sp.layer, largo = 10, ancho, ang = 0, n.trat,
 
 # Compute spatial principal components and reclassify
 multi_mz <- function(sp.layer, vrbls, n.mz = 3, dist = 20, plot = F, resample = F,
-                     area = 3000, style = "kmeans") {
+                     area = 3000, style = "kmeans", gdal = T) {
   if (!inherits(sp.layer, "SpatialPointsDataFrame")) {
     stop("sp.layer isn't a SpatialPointsDataFrame object")
   }
@@ -1524,7 +1524,7 @@ multi_mz <- function(sp.layer, vrbls, n.mz = 3, dist = 20, plot = F, resample = 
   # Clustering of the first component in the selected number of clusters
   pca.rast <- rstr_rcls(rast, n.class = n.mz, style = style)
   # Cleaning of the managemnent zones
-  sp.pol <- mz_smth(pca.rast, area)
+  sp.pol <- mz_smth(pca.rast, area, gdal = gdal)
   print(cs1)
   return(sp.pol)
 }
@@ -1733,18 +1733,17 @@ report_tdec <- function(bound = bound.shp, veris = interp.rp, spz = spz,
   # Soil samples data
   # vrbl.sl <- c('Muestra', 'OM', 'pH', 'NO3', 'P', 'K', 'Na', 'Zn','CEC')
   # vrbl.sl <- c('Muestra', 'OM', 'pH', 'N', 'P', 'K', 'Na', 'Zn','CEC')
-  col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'S (ppm)', 
-              'Zn (ppm)', 'PSI (%)', 'CIC (meq/100g)')
-#   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (ppm)', 
-#               'Na (ppm)', 'Zn (ppm)', 'CIC (meq/100g)')
+  col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (meq/100g)', 
+              'Na (meq/100g)', 'Zn (ppm)', 'CIC (meq/100g)')
+  #   col.nm <- c('Muestra', 'MO (%)', 'pH', 'N-NO3 (ppm)', 'P (ppm)', 'K (ppm)', 
+  #               'Na (ppm)', 'Zn (ppm)', 'CIC (meq/100g)')
   var.nm <- match(vrbl.sl, names(soil@data))
-  soil.tbl <- tableGrob(format(soil@data[var.nm], digits = 3, scientific = F, big.mark = ","), 
-                        cols = col.nm, core.just = "center", col.just = 'center', 
-                        gpar.coretext = gpar(fontsize = 11), 
-                        gpar.coltext = gpar(fontsize = 10, fontface = 'bold'), 
-                        show.rownames = F, h.even.alpha = 0,
-                        gpar.rowtext = gpar(col = "black", cex = 0.7, equal.width = TRUE,
-                                            show.vlines = TRUE, show.hlines = TRUE, separator = "grey"))
+  soil.tbl <- tableGrob(format(soil@data[var.nm], digits = 3, scientific = F,
+                               big.mark = ","), 
+                        cols = col.nm, theme = ttheme_default(
+                          core = list(fg_params=list(cex = 0.8)),
+                          colhead = list(fg_params=list(cex = 0.8)),
+                          rowhead = list(fg_params=list(cex = 0.8))))
   #grid.draw(soil.tbl) 
   # Text
   txt1 <- "Reporte de Caracterizacion Ambiental"
@@ -2130,8 +2129,11 @@ utm_zone <- function(sp.layer) {
   # Get longitude of centroid
   long <- sp.cent[2]
   names(long) <- NULL
+  # Coordinate northing
+  northing <- ifelse(sp.cent[1] < 0, " +south", "")
   # Calculate UTM zone
-  utm.zn <- (floor((long + 180) / 6) %% 60) + 1
+  utm.strp <- (floor((long + 180) / 6) %% 60) + 1
+  utm.zn <- paste0(utm.strp, northing)
   return(utm.zn)
 }
 
