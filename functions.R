@@ -215,7 +215,7 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
     r.stk2 <- subset(r.stk, df2$SCN)
   } else {
     df1$SCN <- paste0("X", df1$SCN)
-    r.stk2 <- subset(r.stk, paste0("x", df1$SCN)
+    r.stk2 <- subset(r.stk, df1$SCN)
   }
   # Get brick name and create new ones
   nms <- names(r.stk2)
