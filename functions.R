@@ -205,8 +205,8 @@ mk_vi_stk <- function(sp.layer, vindx = "EVI", buff = 30, st.year = 1990, vi.thr
   if (length(unique(df1$Year)) < nrow(df1)) {
     for (d in unique(df1$Year)) {
       # Leave the one with highest median
-      vi.max <- max(df1[df1$Year == d, "VI"])
-      df.lst2[[rwn]] <- df1[df1$VI == vi.max,]
+      vi.max <- df1[df1$Year == d & df1$VI == max(df1[df1$Year == d, "VI"]), "SCN"]
+      df.lst2[[rwn]] <- df1[df1$SCN == vi.max,]
       rwn <- rwn + 1
     }
     # Final data.frame and brick
